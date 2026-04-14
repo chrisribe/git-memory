@@ -169,12 +169,12 @@ Tags are auto-normalized to lowercase by the wrapper.
 
 ### SAVE (high value)
 
-- Corrections to wrong mental models
+- Corrections to wrong mental models ("I thought X but it's actually Y")
 - Non-obvious gotchas that wasted investigation time
 - Architecture decisions and rationale
 - DRI lessons and debugged root causes
-- Team policies or conventions not written elsewhere
 - Field mappings, API quirks, config locations not obvious from docs
+- Cost/performance numbers that change strategic decisions
 
 ### SKIP (noise)
 
@@ -183,6 +183,21 @@ Tags are auto-normalized to lowercase by the wrapper.
 - Things easily searchable in official documentation
 - Information that will change soon
 - Short commands without context
+- Ephemeral content: playlists, one-time plans, track lists, session energy notes
+- WIP snapshots of half-finished code changes (save the conclusion, not the journey)
+- Preferences already expressed in conversation or user profile
+- Things already stored in git, a database, or another system of record
+
+### Auto-capture rules
+
+When auto-saving with `[auto]` tag, apply a HIGHER bar than manual saves:
+
+- Only auto-save if the user corrected a wrong assumption, resolved a multi-step debugging session, or discovered a gotcha
+- Do NOT auto-save creative session outputs (playlists, brainstorms, drafts)
+- Do NOT auto-save mid-session WIP — wait for conclusions
+- If unsure, don't save. The user can always say "remember this"
+
+Audit finding: 80% of auto-captures were noise (playlist spam, stale WIP, duplicates). Only corrections to wrong mental models justified auto-save.
 
 ### Quality gate
 

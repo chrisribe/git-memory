@@ -227,6 +227,20 @@ Works on: WSL, SAW, devbox, phone (Termux), CI, bare Linux box, anywhere.
 
 See [SKILL.md](SKILL.md) for agent instructions, capture heuristics, and session workflow.
 
+### VS Code Copilot
+
+`install.sh` copies the skill to `~/.agents/skills/git-memory/SKILL.md` automatically. The skill triggers on memory-related requests.
+
+### Claude Code
+
+Once the repo is public: `/plugin marketplace add chrisribe/git-memory`
+
+Until then, copy `SKILL.md` manually or reference it from your `CLAUDE.md`.
+
+### Other agents (Cursor, Windsurf, etc.)
+
+Copy `SKILL.md` to wherever your agent reads instructions. The file is plain markdown — works anywhere an agent can read a file.
+
 ---
 
 ## Compared to Plan A (GitHub Issues as memory)

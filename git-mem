@@ -6,6 +6,7 @@
 set -euo pipefail
 
 # --- Configuration ---
+GIT_MEM_VERSION="dev"  # stamped by install.sh
 GIT_MEMORY_DIR="${GIT_MEMORY_DIR:-$HOME/memory-store}"
 GIT_MEMORY_DEDUP_THRESHOLD="${GIT_MEMORY_DEDUP_THRESHOLD:-3}"  # min matching words to warn
 COLOR_YELLOW='\033[1;33m'
@@ -443,6 +444,10 @@ cmd_export() {
     gc log --format="%H|%aI|%s%n%b%n---"
 }
 
+cmd_version() {
+    echo "git-mem ${GIT_MEM_VERSION}"
+}
+
 # --- Dispatch ---
 
 cmd="${1:-help}"
@@ -459,6 +464,7 @@ case "$cmd" in
     stats)      cmd_stats "$@" ;;
     sync)       cmd_sync "$@" ;;
     export)     cmd_export "$@" ;;
+    version|--version|-v)  cmd_version ;;
     help|--help|-h)  usage ;;
     *)          die "Unknown command: $cmd. Run: git-mem help" ;;
 esac
