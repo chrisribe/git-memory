@@ -18,6 +18,22 @@ sed "s/^GIT_MEM_VERSION=.*/GIT_MEM_VERSION=\"${VERSION}\"/" "$SCRIPT_DIR/git-mem
 chmod +x "$INSTALL_DIR/git-mem"
 echo "Installed git-mem to $INSTALL_DIR/git-mem"
 
+# On Windows, add a .cmd wrapper so PowerShell/cmd can invoke git-mem
+if [[ "$OSTYPE" == msys* ]] || [[ "$OSTYPE" == mingw* ]] || [[ "$OSTYPE" == cygwin* ]]; then
+    cat > "$INSTALL_DIR/git-mem.cmd" <<'CMDEOF'
+@echo off
+setlocal
+set "GITDIR=C:\Program Files\Git"
+if exist "%GITDIR%\bin\bash.exe" (
+    set "PATH=%GITDIR%\bin;%GITDIR%\usr\bin;%PATH%"
+    "%GITDIR%\bin\bash.exe" "%~dp0git-mem" %*
+) else (
+    bash "%~dp0git-mem" %*
+)
+CMDEOF
+    echo "Installed git-mem.cmd (Windows wrapper)"
+fi
+
 # --- Install skill ---
 mkdir -p "$SKILL_DIR"
 # Stamp version into first line of body (after frontmatter closing ---)
@@ -35,6 +51,21 @@ echo "Installed skill to $SKILL_DIR/SKILL.md"
 
 echo ""
 echo "Version: ${VERSION}"
+
+# --- Init memory store on first install ---
+MEMORY_DIR="${GIT_MEMORY_DIR:-$HOME/memory-store}"
+if [[ ! -d "$MEMORY_DIR/.git" ]]; then
+    echo ""
+    echo "Memory store not found at $MEMORY_DIR"
+    read -rp "Initialize it now? [Y/n] " init_confirm
+    if [[ "$init_confirm" != "n" && "$init_confirm" != "N" ]]; then
+        mkdir -p "$MEMORY_DIR"
+        git init "$MEMORY_DIR"
+        echo "Initialized memory store: $MEMORY_DIR"
+    fi
+else
+    echo "Memory store: $MEMORY_DIR ($(git -C "$MEMORY_DIR" rev-list --count HEAD 2>/dev/null || echo 0) memories)"
+fi
 
 # Check if install dir is on PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then

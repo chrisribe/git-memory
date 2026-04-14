@@ -48,8 +48,21 @@ total = len(memories)
 # Replay oldest-first (preserve chronological order in git log)
 memories_sorted = sorted(memories, key=lambda m: m.get('createdAt', ''))
 
+# --- Load existing subjects for dedup ---
+try:
+    result = subprocess.run(
+        ['git', '-C', target_dir, 'log', '--format=%s'],
+        capture_output=True, text=True, check=True
+    )
+    existing_subjects = set(line.strip().lower() for line in result.stdout.splitlines() if line.strip())
+    print(f"Loaded {len(existing_subjects)} existing subjects for dedup")
+except subprocess.CalledProcessError:
+    existing_subjects = set()
+    print("No existing commits — fresh store")
+
 ok = 0
 skip = 0
+dup = 0
 err = 0
 
 for i, mem in enumerate(memories_sorted):
@@ -76,9 +89,18 @@ for i, mem in enumerate(memories_sorted):
     if len(subject_raw) > 120:
         subject_raw = subject_raw[:117] + '...'
 
+    # Inject [personal] tag for migrated memories
+    if 'personal' not in [t.lower() for t in tags]:
+        tags = ['personal'] + tags
+
     # Format tags as [tag1][tag2]
     tag_str = ''.join(f'[{t.lower()}]' for t in sorted(tags)) if tags else ''
     subject = f"{tag_str} {subject_raw}".strip()
+
+    # --- Dedup: skip if subject already exists ---
+    if subject.lower() in existing_subjects:
+        dup += 1
+        continue
 
     # Body: remaining content after subject line
     body = '\n'.join(body_lines).strip()
@@ -105,7 +127,7 @@ for i, mem in enumerate(memories_sorted):
     if (i + 1) % 50 == 0:
         print(f"  {i+1}/{total} processed...")
 
-print(f"\nDone: {ok} imported, {skip} skipped (empty), {err} errors")
+print(f"\nDone: {ok} imported, {dup} duplicates skipped, {skip} skipped (empty), {err} errors")
 PYEOF
 
 echo ""

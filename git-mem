@@ -399,7 +399,7 @@ cmd_stats() {
     local total
     total=$(gc log --oneline 2>/dev/null | wc -l | tr -d ' ')
     local first_date last_date
-    first_date=$(gc log --reverse --format="%aI" 2>/dev/null | head -1)
+    first_date=$(gc log --reverse --format="%aI" 2>/dev/null | head -1 || true)
     last_date=$(gc log --format="%aI" -1 2>/dev/null)
 
     echo -e "${COLOR_GREEN}Memory store:${COLOR_RESET} $GIT_MEMORY_DIR"
@@ -412,7 +412,8 @@ cmd_stats() {
 
     # Tag breakdown
     local tag_count
-    tag_count=$(gc log --format="%s" 2>/dev/null | grep -oE '\[[^]]+\]' | sort -u | wc -l | tr -d ' ')
+    tag_count=$(gc log --format="%s" 2>/dev/null | grep -oE '\[[^]]+\]' || true)
+    tag_count=$(echo "$tag_count" | sort -u | wc -l | tr -d ' ')
     echo -e "${COLOR_GREEN}Unique tags:${COLOR_RESET} $tag_count"
 
     # Last 7 days
