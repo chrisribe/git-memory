@@ -13,89 +13,134 @@ Zero-dependency persistent memory for AI agents using git empty commits.
 - You're working in an environment with `git` available
 - You want memories that work offline, sync via git push/pull, and have version history
 
+## Prerequisites
+
+The `git-mem` wrapper should be on `$PATH`. If not, fall back to raw git commands (see Fallback section).
+
 ## Memory store location
 
-```
-~/memory-store
-```
+Default: `~/memory-store` (override with `GIT_MEMORY_DIR` env var).
 
-If this repo doesn't exist, create it:
+If the store doesn't exist yet:
 ```bash
-git init ~/memory-store
+git-mem init
 ```
 
 ## Commands
 
-### Remember (store a memory)
+### Store a memory
 
-Quick one-liner:
+One-liner:
 ```bash
-git -C ~/memory-store commit --allow-empty -m "[tags] summary"
+git-mem add "[tags] summary"
 ```
 
-With details (multi-line):
+With body (subject + detail):
 ```bash
-git -C ~/memory-store commit --allow-empty -m "[tags] summary
-
-Detail line 1
-Detail line 2
-Code refs, links, etc."
+git-mem add "[tags] summary" "Detail line 1. Detail line 2."
 ```
 
-**PowerShell/Windows alternative** (use multiple `-m` flags):
+Multi-line via editor (best for complex memories):
 ```bash
-git -C ~/memory-store commit --allow-empty -m "[tags] summary" -m "Detail line 1" -m "Detail line 2"
+git-mem edit
 ```
 
-### Recall (search memories)
-
-By keyword:
+**Non-interactive mode** (for scripted/agent use — skips dedup prompt):
 ```bash
-git -C ~/memory-store log --oneline --grep "keyword"
+git-mem add --yes "[auto][tags] summary"
 ```
 
-By tag:
+### Search memories
+
+**Use AND search by default for precision.** OR search returns every memory containing any word, which gets noisy fast.
+
+AND — all words must match (recommended for most queries):
 ```bash
-git -C ~/memory-store log --oneline --grep "\[dri\]"
+git-mem search +cosmosdb +partition
+git-mem search +dri +incident
+git-mem search +certificate +deid
 ```
 
-By time:
+OR — any word matches (use when casting a wide net):
 ```bash
-git -C ~/memory-store log --oneline --grep "keyword" --since="2 weeks ago"
+git-mem search cosmosdb throttle
 ```
 
-Full content of one memory:
+**Rule of thumb:**
+- 1 word → OR is fine
+- 2+ words → prefer AND (`+word`) unless explicitly exploring broadly
+
+### Browse recent context
+
+Run at session start to load context:
 ```bash
-git -C ~/memory-store log -1 --format="%B" <hash>
+git-mem recent 20
 ```
 
-### Browse recent context (run at session start)
+### Show full memory
 
 ```bash
-git -C ~/memory-store log --oneline -20
+git-mem show <hash>
+```
+
+### List tags
+
+```bash
+git-mem tags
 ```
 
 ### Stats
 
 ```bash
-git -C ~/memory-store log --oneline | wc -l
+git-mem stats
+```
+
+### Sync across machines
+
+```bash
+git-mem sync
+```
+
+### Export
+
+```bash
+git-mem export
+```
+
+## Fallback: raw git commands
+
+If `git-mem` is not available, use raw git:
+
+```bash
+# Store
+git -C ~/memory-store commit --allow-empty -m "[tags] summary"
+
+# Search
+git -C ~/memory-store log --oneline -i --grep "keyword"
+
+# Browse recent
+git -C ~/memory-store log --oneline -20
+
+# Full content
+git -C ~/memory-store log -1 --format="%B" <hash>
+
+# Sync
+git -C ~/memory-store pull --rebase --autostash && git -C ~/memory-store push
 ```
 
 ## Subject line format
 
-The subject line (first line) is critical — it's what you see in `git log --oneline` results.
+The subject line is critical — it's what appears in search results.
 
 ```
 [tags] Keyword-rich summary that stands alone
 ```
 
-**Best practices:**
+**Rules:**
 - Include searchable keywords in the subject, not just the body
 - The subject should make sense without reading the body
-- `git log --grep` searches full content, but `--oneline` only shows the subject
 - Think: "What would I search for later?"
 
-**Example:**
 ```
 Good:  [dri][cosmosdb] RU exhaustion ≠ hot partition — check autoscale ceiling
 Bad:   [dri] Investigation notes
@@ -103,42 +148,43 @@ Bad:   [dri] Investigation notes
 
 ## Tag convention
 
-Tags go in square brackets at the start of the commit subject:
-
 ```
 [area][subtopic] One-line summary
 ```
 
-**Common tags:**
-- `[dri]` — on-call lessons, incident learnings
-- `[arch]` — architecture decisions
-- `[gotcha]` — non-obvious traps that waste time
-- `[workflow]` — process and tooling patterns
-- `[decision]` — tech choices with rationale
-- `[auto]` — AI auto-captured (use when you store without explicit user request)
+| Tag | Purpose |
+|-----|---------|
+| `[dri]` | On-call lessons, incident learnings |
+| `[arch]` | Architecture decisions |
+| `[gotcha]` | Non-obvious traps that waste time |
+| `[workflow]` | Process and tooling patterns |
+| `[decision]` | Tech choices with rationale |
+| `[auto]` | AI auto-captured (use when storing without explicit user request) |
 
 Combine freely: `[dri][cosmosdb]`, `[gotcha][build]`, `[arch][rpaas]`
 
+Tags are auto-normalized to lowercase by the wrapper.
+
 ## Capture heuristics
 
-### SAVE these (high value)
+### SAVE (high value)
 
 - Corrections to wrong mental models
 - Non-obvious gotchas that wasted investigation time
 - Architecture decisions and rationale
 - DRI lessons and debugged root causes
 - Team policies or conventions not written elsewhere
-- Field mappings, API quirks, or config locations that aren't obvious from docs
+- Field mappings, API quirks, config locations not obvious from docs
 
-### SKIP these (low value / noise)
+### SKIP (noise)
 
 - Setup instructions that already exist on disk or in docs
 - Personal facts about colleagues
 - Things easily searchable in official documentation
 - Information that will change soon
-- Short commands without context (just a bookmark, not a memory)
+- Short commands without context
 
-### Quality signal
+### Quality gate
 
 Ask: "Would this save future-me 10+ minutes of investigation?"
 - Yes → store it
@@ -146,26 +192,11 @@ Ask: "Would this save future-me 10+ minutes of investigation?"
 
 ## Session workflow
 
-1. **Start of session:** Run `git -C ~/memory-store log --oneline -20` to load recent context
+1. **Start:** `git-mem recent 20` — load recent context
 2. **During work:** When you learn something non-obvious and reusable, store it immediately
-3. **End of session:** No action needed — memories persist automatically
-
-## Multi-machine sync (optional)
-
-```bash
-# Add remote (once)
-git -C ~/memory-store remote add origin <your-private-repo-url>
-
-# Push after storing
-git -C ~/memory-store push
-
-# Pull on another machine
-git -C ~/memory-store pull
-```
+3. **End:** No action needed — memories persist automatically
 
 ## Branches as thought spaces (optional)
-
-Use branches to separate different types of thinking:
 
 ```
 main                    ← verified, high-confidence memories
@@ -174,8 +205,6 @@ main                    ← verified, high-confidence memories
 └── project/foo         ← project-scoped, archive when done
 ```
 
-**Branch patterns:**
-
 | Pattern | Purpose | When to merge to main |
 |---------|---------|----------------------|
 | `main` | Proven knowledge | — |
@@ -183,109 +212,18 @@ main                    ← verified, high-confidence memories
 | `incident/*` | Incident context dump | Merge DRI lessons only |
 | `project/*` | Project-specific | Merge learnings, archive branch |
 
-**Workflow:**
-
-```bash
-# Start exploring
-git -C ~/memory-store checkout -b brainstorm/memory-systems
-
-# Dump ideas freely (noise is okay here)
-git -C ~/memory-store commit --allow-empty -m "[idea] What if commits were memories?"
-git -C ~/memory-store commit --allow-empty -m "[idea] GitHub Issues as DB?"
-
-# One idea wins — cherry-pick to main
-git -C ~/memory-store checkout main
-git -C ~/memory-store cherry-pick <winner-hash>
-
-# Or squash exploration into one refined memory
-git -C ~/memory-store merge --squash brainstorm/memory-systems
-git -C ~/memory-store commit --allow-empty -m "[decision] Chose empty commits over GitHub Issues
-
-Evaluated: files, Issues, empty commits.
-Winner: empty commits — zero deps, offline, git everywhere."
-```
-
-**Benefits:**
-- Safe space for noise — brainstorms don't pollute main
-- Context grouping — incident branches keep related memories together
-- Review before merge — decide what's worth keeping
-- Archive, don't delete — old branches stay recoverable
-
-## If aliases are available
-
-The repo may have these aliases pre-configured:
-
-| Alias | Equivalent |
-|-------|------------|
-| `git mem "[tags] msg"` | `git commit --allow-empty -m "[tags] msg"` |
-| `git recall keyword` | `git log --oneline --grep "keyword"` |
-| `git memories` | `git log --oneline -20` |
-| `git mem-stats` | Count of all memories |
-
-Use aliases when in the memory-store directory. Use full commands with `-C ~/memory-store` when invoking from elsewhere.
-
-## Maintenance
-
-### Remove a single memory
-
-```bash
-# Find the hash
-git -C ~/memory-store log --oneline --grep "keyword"
-
-# Interactive rebase to drop it
-git -C ~/memory-store rebase -i <hash>^
-# In editor: change "pick <hash>" to "drop <hash>", save and exit
-```
-
-### Remove duplicates or bulk cleanup
-
-```bash
-# Interactive rebase from root
-git -C ~/memory-store rebase -i --root
-# In editor: change "pick" to "drop" for unwanted commits, save and exit
-```
-
-### Nuclear option (wipe and start fresh)
-
-```bash
-cd ~/memory-store
-rm -rf .git
-git init
-```
-
-Or keep history but reset content:
-```bash
-git -C ~/memory-store checkout --orphan fresh
-git -C ~/memory-store commit --allow-empty -m "Reset memory store"
-git -C ~/memory-store branch -D main
-git -C ~/memory-store branch -m main
-```
-
-### After cleanup
-
-Force push if you have a remote (history was rewritten):
-```bash
-git -C ~/memory-store push --force-with-lease
-```
-
 ## Example
 
-User asks about CosmosDB performance. You investigate and discover RU exhaustion ≠ hot partition — it's total container ceiling.
+User asks about CosmosDB performance. You investigate and discover RU exhaustion ≠ hot partition.
 
 Store it:
 ```bash
-git -C ~/memory-store commit --allow-empty -m "[dri][cosmosdb] RU exhaustion ≠ hot partition
-
-100% normalized RU can mean container-level ceiling hit, not partition hotspot.
-With unique partition keys, load is distributed — saturation comes from aggregate volume.
-Fix: increase autoScaleMaxThroughput in Bicep, not partition key redesign.
-Discovered during eus2001 incident Mar 2026."
+git-mem add "[dri][cosmosdb] RU exhaustion ≠ hot partition — check autoscale ceiling" \
+  "100% normalized RU can mean container-level ceiling hit, not partition hotspot. Fix: increase autoScaleMaxThroughput in Bicep, not partition key redesign."
 ```
 
 Later session, user hits CosmosDB 408s:
 ```bash
-git -C ~/memory-store log --oneline --grep "cosmosdb"
-# → shows the memory hash
-git -C ~/memory-store log -1 --format="%B" <hash>
-# → full content with the fix
+git-mem search cosmosdb
+git-mem show <hash>
 ```
