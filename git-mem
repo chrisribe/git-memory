@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# git-mem — thin wrapper for git-memory
+# Zero-dependency persistent memory using git empty commits.
+# https://github.com/chrisribe/git-memory
+
+set -euo pipefail
+
+# --- Configuration ---
+GIT_MEMORY_DIR="${GIT_MEMORY_DIR:-$HOME/memory-store}"
+GIT_MEMORY_DEDUP_THRESHOLD="${GIT_MEMORY_DEDUP_THRESHOLD:-3}"  # min matching words to warn
+COLOR_YELLOW='\033[1;33m'
+COLOR_GREEN='\033[0;32m'
+COLOR_RED='\033[0;31m'
+COLOR_CYAN='\033[0;36m'
+COLOR_DIM='\033[2m'
+COLOR_RESET='\033[0m'
+
+# --- Helpers ---
+
+die() { echo -e "${COLOR_RED}error:${COLOR_RESET} $*" >&2; exit 1; }
+
+ensure_repo() {
+    if [[ ! -d "$GIT_MEMORY_DIR/.git" ]]; then
+        die "Memory store not found at $GIT_MEMORY_DIR. Run: git-mem init"
+    fi
+}
+
+gc() { git -C "$GIT_MEMORY_DIR" "$@"; }
+
+usage() {
+    cat <<'EOF'
+git-mem — persistent memory using git empty commits
+
+COMMANDS
+  init                        Initialize memory store
+  add  "[tags] summary"       Store a memory (with dedup check)
+  add  --yes "[tags] msg"     Store without dedup prompt (for agents)
+  edit                        Store a memory via $EDITOR (multi-line)
+  search <query>              Fuzzy multi-keyword search (OR by default)
+  search +word1 +word2        AND search (all words must match)
+  search --json <query>       Search with JSON output (for agents)
+  show <hash>                 Show full content of a memory
+  show --json <hash>          Show full content as JSON (for agents)
+  recent [n]                  Browse recent memories (default: 20)
+  tags                        List all tags with counts
+  stats                       Memory statistics
+  sync                        Safe pull --rebase, then push
+  export                      Dump all memories to stdout
+  help                        Show this help
+
+ENVIRONMENT
+  GIT_MEMORY_DIR              Memory store path (default: ~/memory-store)
+  GIT_MEMORY_DEDUP_THRESHOLD  Min word overlap to warn (default: 3)
+
+EXAMPLES
+  git-mem add "[dri][cosmosdb] RU exhaustion is container ceiling not partition"
+  git-mem search cosmosdb throttle
+  git-mem search +cosmosdb +partition     # both must match
+  git-mem edit                            # opens editor for multi-line
+  git-mem tags
+  git-mem sync
+EOF
+}
+
+# --- Normalize tags to lowercase ---
+normalize_tags() {
+    local msg="$1"
+    # Extract leading [tag] sequences, lowercase them, reattach the rest
+    if [[ "$msg" =~ ^((\[[^]]+\])+)(.*) ]]; then
+        local tags="${BASH_REMATCH[1]}"
+        local rest="${BASH_REMATCH[3]}"
+        tags=$(echo "$tags" | tr '[:upper:]' '[:lower:]')
+        echo "${tags}${rest}"
+    else
+        echo "$msg"
+    fi
+}
+
+# --- Validate tag format ---
+validate_tags() {
+    local msg="$1"
+    # Warn if message starts with text that looks like a tag but isn't bracketed
+    if [[ "$msg" =~ ^[a-zA-Z]+\] ]] || [[ "$msg" =~ ^\[[^]]*$ ]]; then
+        echo -e "${COLOR_YELLOW}warning:${COLOR_RESET} Tag format looks off. Expected: [tag] or [tag1][tag2]" >&2
+    fi
+    # Suggest tags if none present
+    if [[ ! "$msg" =~ ^\[ ]]; then
+        echo -e "${COLOR_YELLOW}hint:${COLOR_RESET} No tags detected. Consider: [dri] [arch] [gotcha] [workflow] [decision] [auto]" >&2
+    fi
+}
+
+# --- Dedup detection ---
+# Uses git log --grep per word, then counts hash frequency to find overlap
+check_dedup() {
+    local msg="$1"
+    local yes_mode="${2:-0}"
+
+    # Strip tags, lowercase, extract words (4+ chars to skip noise)
+    local words
+    words=$(echo "$msg" | sed 's/\[[^]]*\]//g' | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z]{4,}' | sort -u)
+
+    [[ -z "$words" ]] && return 0
+
+    local word_count
+    word_count=$(echo "$words" | wc -l | tr -d ' ')
+
+    # For very short messages, require fewer matches
+    local threshold=$GIT_MEMORY_DEDUP_THRESHOLD
+    if [[ $word_count -le 3 ]]; then
+        threshold=2
+    fi
+
+    # grep for each word via git, collect all matching hashes
+    local all_hits=""
+    while IFS= read -r word; do
+        local hits
+        hits=$(gc log --format="%H %s" --all -i --grep="$word" 2>/dev/null || true)
+        [[ -n "$hits" ]] && all_hits+="$hits"$'\n'
+    done <<< "$words"
+
+    [[ -z "$all_hits" ]] && return 0
+
+    # Count how many words matched per commit hash — hashes appearing >= threshold times are suspicious
+    local suspicious
+    suspicious=$(echo "$all_hits" | awk -v thresh="$threshold" '{
+        hash = $1
+        if (!line[hash]) { line[hash] = $0 }
+        count[hash]++
+    }
+    END {
+        for (h in count) {
+            if (count[h] >= thresh) print line[h]
+        }
+    }')
+
+    if [[ -n "$suspicious" ]]; then
+        echo -e "${COLOR_YELLOW}Possible duplicates found:${COLOR_RESET}" >&2
+        while IFS= read -r s; do
+            local h="${s%% *}"
+            local subj="${s#* }"
+            echo -e "  ${COLOR_DIM}${h:0:7}${COLOR_RESET} $subj" >&2
+        done <<< "$suspicious"
+        echo "" >&2
+        if [[ "$yes_mode" -eq 1 ]]; then
+            echo -e "${COLOR_DIM}(--yes mode: storing anyway)${COLOR_RESET}" >&2
+        else
+            read -rp "Store anyway? [y/N] " confirm
+            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+                echo "Aborted." >&2
+                return 1
+            fi
+        fi
+    fi
+    return 0
+}
+
+# --- JSON helper ---
+# Escapes a string for safe JSON embedding (handles \ " and newlines)
+json_escape_str() {
+    local s="$1"
+    s="${s//\\/\\\\}"    # \ → \\
+    s="${s//\"/\\\"}"    # " → \"
+    s="${s//$'\n'/\\n}"  # newline → \n
+    s="${s//$'\t'/\\t}"  # tab → \t
+    printf '%s' "$s"
+}
+
+# --- Fuzzy multi-keyword search ---
+cmd_search() {
+    ensure_repo
+    [[ $# -eq 0 ]] && die "Usage: git-mem search [--json] <query words>"
+
+    local mode="or"
+    local json_mode=0
+    local terms=()
+
+    for arg in "$@"; do
+        case "$arg" in
+            --json) json_mode=1 ;;
+            +*) mode="and"; terms+=("${arg#+}") ;;
+            *) terms+=("$arg") ;;
+        esac
+    done
+
+    [[ ${#terms[@]} -eq 0 ]] && die "Usage: git-mem search [--json] <query words>"
+
+    # Get all commit hashes + subjects + bodies
+    local results=""
+
+    if [[ "$mode" == "or" ]]; then
+        # OR: match any term, deduplicate by hash via awk
+        local or_output
+        or_output=$(for term in "${terms[@]}"; do
+            gc log --oneline --all -i --grep="$term" 2>/dev/null || true
+        done | awk '!seen[$1]++')
+        [[ -n "$or_output" ]] && results="$or_output"$'\n'
+    else
+        # AND: use git's built-in --all-match with multiple --grep flags
+        local grep_args=()
+        for term in "${terms[@]}"; do
+            grep_args+=(--grep="$term")
+        done
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            results+="$line"$'\n'
+        done < <(gc log --oneline --all -i --all-match "${grep_args[@]}" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$results" ]]; then
+        if [[ $json_mode -eq 1 ]]; then
+            echo "[]"
+        else
+            echo "No results."
+        fi
+    elif [[ $json_mode -eq 1 ]]; then
+        # JSON array output — pure bash, single git call per search mode
+        local json_results=""
+        if [[ "$mode" == "or" ]]; then
+            json_results=$(for term in "${terms[@]}"; do
+                gc log --format="%h%x01%aI%x01%s" --all -i --grep="$term" 2>/dev/null || true
+            done | awk -F$'\x01' '!seen[$1]++')
+        else
+            json_results=$(gc log --format="%h%x01%aI%x01%s" --all -i --all-match "${grep_args[@]}" 2>/dev/null || true)
+        fi
+        local first=1
+        echo -n "["
+        while IFS=$'\x01' read -r hash date subj; do
+            [[ -z "$hash" ]] && continue
+            subj=$(json_escape_str "$subj")
+            [[ $first -eq 0 ]] && printf ","
+            first=0
+            printf '{"hash":"%s","date":"%s","subject":"%s"}' "$hash" "$date" "$subj"
+        done <<< "$json_results"
+        echo "]"
+    else
+        echo -e "${COLOR_GREEN}Found:${COLOR_RESET}"
+        echo "$results" | sed '/^$/d' | while IFS= read -r line; do
+            local hash="${line%% *}"
+            local rest="${line#* }"
+            echo -e "  ${COLOR_CYAN}${hash}${COLOR_RESET} ${rest}"
+        done
+    fi
+}
+
+# --- Commands ---
+
+cmd_init() {
+    if [[ -d "$GIT_MEMORY_DIR/.git" ]]; then
+        echo "Memory store already exists at $GIT_MEMORY_DIR"
+        gc log --oneline -5
+        return 0
+    fi
+    mkdir -p "$GIT_MEMORY_DIR"
+    git init "$GIT_MEMORY_DIR"
+    echo -e "${COLOR_GREEN}Memory store initialized at $GIT_MEMORY_DIR${COLOR_RESET}"
+}
+
+cmd_add() {
+    ensure_repo
+    local yes_mode=0
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            --yes|-y) yes_mode=1 ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+
+    [[ ${#args[@]} -eq 0 ]] && die "Usage: git-mem add [--yes] \"[tags] summary\" [\"body\"]"
+
+    local subject="${args[0]}"
+    local body="${args[1]:-}"
+
+    # Normalize and validate
+    subject=$(normalize_tags "$subject")
+    validate_tags "$subject"
+
+    # Check for duplicates
+    local full_msg="$subject"
+    [[ -n "$body" ]] && full_msg="$subject $body"
+
+    if ! check_dedup "$full_msg" "$yes_mode"; then
+        return 1
+    fi
+
+    # Store
+    if [[ -n "$body" ]]; then
+        gc commit --allow-empty -m "$subject" -m "$body"
+    else
+        gc commit --allow-empty -m "$subject"
+    fi
+
+    echo -e "${COLOR_GREEN}Stored.${COLOR_RESET}"
+}
+
+cmd_edit() {
+    ensure_repo
+    local tmpfile
+    tmpfile=$(mktemp "${TMPDIR:-/tmp}/git-mem-XXXXXX.md")
+
+    cat > "$tmpfile" <<'TEMPLATE'
+
+# Enter your memory above this line.
+# First line = subject (summary). Blank line, then body (details).
+# Lines starting with # are ignored.
+#
+# Format:  [tags] Keyword-rich summary
+#
+# Example:
+#   [dri][cosmosdb] RU exhaustion is container ceiling not partition
+#
+#   100% normalized RU can mean container-level ceiling hit.
+#   Fix: increase autoScaleMaxThroughput in Bicep.
+TEMPLATE
+
+    "${EDITOR:-vi}" "$tmpfile"
+
+    # Parse: strip comments, extract subject and body
+    local content
+    content=$(grep -v '^#' "$tmpfile" | sed '/./,$!d')  # remove comments, strip leading blanks
+    rm -f "$tmpfile"
+
+    [[ -z "$content" ]] && die "Empty message. Aborted."
+
+    local subject
+    subject=$(echo "$content" | head -1)
+    local body
+    body=$(echo "$content" | tail -n +3)  # skip subject + blank line
+
+    subject=$(normalize_tags "$subject")
+    validate_tags "$subject"
+
+    local full_msg="$subject"
+    [[ -n "$body" ]] && full_msg="$subject $body"
+
+    if ! check_dedup "$full_msg"; then
+        return 1
+    fi
+
+    if [[ -n "$body" ]]; then
+        gc commit --allow-empty -m "$subject" -m "$body"
+    else
+        gc commit --allow-empty -m "$subject"
+    fi
+
+    echo -e "${COLOR_GREEN}Stored.${COLOR_RESET}"
+}
+
+cmd_show() {
+    ensure_repo
+    [[ $# -eq 0 ]] && die "Usage: git-mem show [--json] <hash>"
+    local json_mode=0
+    local hash=""
+    for arg in "$@"; do
+        case "$arg" in
+            --json) json_mode=1 ;;
+            *) hash="$arg" ;;
+        esac
+    done
+    [[ -z "$hash" ]] && die "Usage: git-mem show [--json] <hash>"
+
+    if [[ $json_mode -eq 1 ]]; then
+        local subj date body
+        subj=$(gc log -1 --format="%s" "$hash" 2>/dev/null) || die "Not found: $hash"
+        date=$(gc log -1 --format="%aI" "$hash" 2>/dev/null)
+        body=$(gc log -1 --format="%b" "$hash" 2>/dev/null)
+        subj=$(json_escape_str "$subj")
+        body=$(json_escape_str "$body")
+        printf '{"hash":"%s","date":"%s","subject":"%s","body":"%s"}\n' \
+            "$(gc log -1 --format='%h' "$hash")" "$date" "$subj" "$body"
+    else
+        gc log -1 --format="%C(yellow)%h%Creset %C(green)%aI%Creset%n%n%B" "$hash"
+    fi
+}
+
+cmd_recent() {
+    ensure_repo
+    local n="${1:-20}"
+    gc log --oneline "-$n"
+}
+
+cmd_tags() {
+    ensure_repo
+    echo -e "${COLOR_GREEN}Tags by frequency:${COLOR_RESET}"
+    gc log --format="%s" \
+        | grep -oE '\[[^]]+\]' \
+        | tr '[:upper:]' '[:lower:]' \
+        | sort \
+        | uniq -c \
+        | sort -rn \
+        | while read -r count tag; do
+            printf "  %4d  %s\n" "$count" "$tag"
+        done
+}
+
+cmd_stats() {
+    ensure_repo
+    local total
+    total=$(gc log --oneline 2>/dev/null | wc -l | tr -d ' ')
+    local first_date last_date
+    first_date=$(gc log --reverse --format="%aI" 2>/dev/null | head -1)
+    last_date=$(gc log --format="%aI" -1 2>/dev/null)
+
+    echo -e "${COLOR_GREEN}Memory store:${COLOR_RESET} $GIT_MEMORY_DIR"
+    echo -e "${COLOR_GREEN}Total memories:${COLOR_RESET} $total"
+
+    if [[ -n "$first_date" ]]; then
+        echo -e "${COLOR_GREEN}First:${COLOR_RESET} $first_date"
+        echo -e "${COLOR_GREEN}Latest:${COLOR_RESET} $last_date"
+    fi
+
+    # Tag breakdown
+    local tag_count
+    tag_count=$(gc log --format="%s" 2>/dev/null | grep -oE '\[[^]]+\]' | sort -u | wc -l | tr -d ' ')
+    echo -e "${COLOR_GREEN}Unique tags:${COLOR_RESET} $tag_count"
+
+    # Last 7 days
+    local recent
+    recent=$(gc log --oneline --since="7 days ago" 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "${COLOR_GREEN}Last 7 days:${COLOR_RESET} $recent"
+}
+
+cmd_sync() {
+    ensure_repo
+    local has_remote
+    has_remote=$(gc remote 2>/dev/null || true)
+
+    if [[ -z "$has_remote" ]]; then
+        die "No remote configured. Run: git -C $GIT_MEMORY_DIR remote add origin <url>"
+    fi
+
+    echo "Pulling with rebase..."
+    gc pull --rebase --autostash 2>&1 || die "Pull failed. Resolve manually."
+
+    echo "Pushing..."
+    gc push 2>&1 || die "Push failed."
+
+    echo -e "${COLOR_GREEN}Synced.${COLOR_RESET}"
+}
+
+cmd_export() {
+    ensure_repo
+    gc log --format="%H|%aI|%s%n%b%n---"
+}
+
+# --- Dispatch ---
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+    init)       cmd_init "$@" ;;
+    add|store|mem)  cmd_add "$@" ;;
+    edit)       cmd_edit "$@" ;;
+    search|recall|find|grep)  cmd_search "$@" ;;
+    show)       cmd_show "$@" ;;
+    recent|ls)  cmd_recent "$@" ;;
+    tags)       cmd_tags "$@" ;;
+    stats)      cmd_stats "$@" ;;
+    sync)       cmd_sync "$@" ;;
+    export)     cmd_export "$@" ;;
+    help|--help|-h)  usage ;;
+    *)          die "Unknown command: $cmd. Run: git-mem help" ;;
+esac
