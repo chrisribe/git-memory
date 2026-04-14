@@ -1,244 +1,135 @@
 ---
 name: git-memory
-description: Zero-dependency persistent memory using git empty commits. Use when the user wants to remember information across sessions, store learnings, save context for later, or build a personal knowledge base. Also use when: "remember this", "save for later", "don't forget", memory store, knowledge persistence, or any request to preserve information beyond the current conversation. Works offline, syncs via git, requires only git CLI — no MCP server, no Node.js, no database.
+description: "Zero-dependency persistent memory using git empty commits. Use when the user wants to remember information across sessions, store learnings, save context for later, or build a personal knowledge base. Also use when: 'remember this', 'save for later', 'don't forget', memory store, knowledge persistence, or any request to preserve information beyond the current conversation. Use even when the user doesn't say 'memory' explicitly — any desire to retain knowledge across sessions qualifies. Works offline, syncs via git, requires only git CLI."
 ---
 
 # git-memory
 
-Zero-dependency persistent memory for AI agents using git empty commits.
+Persistent memory for AI agents via git empty commits.
 
-## When to use this skill
+## Setup
 
-- You need to remember information across sessions
-- You're working in an environment with `git` available
-- You want memories that work offline, sync via git push/pull, and have version history
+Always use the `git-mem` CLI wrapper — it handles dedup detection, tag normalization, and consistent formatting.
 
-## Prerequisites
-
-The `git-mem` wrapper should be on `$PATH`. If not, fall back to raw git commands (see Fallback section).
-
-## Memory store location
-
-Default: `~/memory-store` (override with `GIT_MEMORY_DIR` env var).
-
-If the store doesn't exist yet:
 ```bash
-git-mem init
+git-mem init   # first time only — creates ~/memory-store
 ```
+
+Store location: `~/memory-store` (override with `GIT_MEMORY_DIR`).
 
 ## Commands
 
-### Store a memory
+### Store
 
-One-liner:
 ```bash
-git-mem add "[tags] summary"
+git-mem add "[tags] summary"                          # one-liner
+git-mem add "[tags] summary" "Detail body text."      # with body
+git-mem add --yes "[auto][tags] summary"              # non-interactive (agent use)
 ```
 
-With body (subject + detail):
+### Search
+
+Default to AND search — OR gets noisy with 2+ terms because it matches any word.
+
 ```bash
-git-mem add "[tags] summary" "Detail line 1. Detail line 2."
+git-mem search +cosmosdb +partition    # AND: all words must match
+git-mem search cosmosdb throttle       # OR: any word matches
 ```
 
-Multi-line via editor (best for complex memories):
+### Other commands
+
 ```bash
-git-mem edit
+git-mem recent 20     # browse recent (run at session start for context)
+git-mem show <hash>   # full memory content
+git-mem tags          # list all tags
+git-mem stats         # store statistics
+git-mem sync          # push/pull across machines
+git-mem export        # export all memories
 ```
 
-**Non-interactive mode** (for scripted/agent use — skips dedup prompt):
-```bash
-git-mem add --yes "[auto][tags] summary"
-```
+## Fallback: raw git (only if git-mem is not on PATH)
 
-### Search memories
-
-**Use AND search by default for precision.** OR search returns every memory containing any word, which gets noisy fast.
-
-AND — all words must match (recommended for most queries):
-```bash
-git-mem search +cosmosdb +partition
-git-mem search +dri +incident
-git-mem search +certificate +deid
-```
-
-OR — any word matches (use when casting a wide net):
-```bash
-git-mem search cosmosdb throttle
-```
-
-**Rule of thumb:**
-- 1 word → OR is fine
-- 2+ words → prefer AND (`+word`) unless explicitly exploring broadly
-
-### Browse recent context
-
-Run at session start to load context:
-```bash
-git-mem recent 20
-```
-
-### Show full memory
+Only use these if `git-mem` is genuinely unavailable (e.g., not installed). Prefer `git-mem` — it adds dedup checks and tag normalization that raw git lacks.
 
 ```bash
-git-mem show <hash>
-```
-
-### List tags
-
-```bash
-git-mem tags
-```
-
-### Stats
-
-```bash
-git-mem stats
-```
-
-### Sync across machines
-
-```bash
-git-mem sync
-```
-
-### Export
-
-```bash
-git-mem export
-```
-
-## Fallback: raw git commands
-
-If `git-mem` is not available, use raw git:
-
-```bash
-# Store
-git -C ~/memory-store commit --allow-empty -m "[tags] summary"
-
-# Search
-git -C ~/memory-store log --oneline -i --grep "keyword"
-
-# Browse recent
-git -C ~/memory-store log --oneline -20
-
-# Full content
-git -C ~/memory-store log -1 --format="%B" <hash>
-
-# Sync
-git -C ~/memory-store pull --rebase --autostash && git -C ~/memory-store push
+git -C ~/memory-store commit --allow-empty -m "[tags] summary"   # store
+git -C ~/memory-store log --oneline -i --grep "keyword"          # search
+git -C ~/memory-store log --oneline -20                          # recent
+git -C ~/memory-store log -1 --format="%B" <hash>                # show
+git -C ~/memory-store pull --rebase --autostash && git -C ~/memory-store push  # sync
 ```
 
 ## Subject line format
 
-The subject line is critical — it's what appears in search results.
+The subject is what appears in search results, so it must stand alone — a vague subject means the memory is effectively lost.
 
 ```
 [tags] Keyword-rich summary that stands alone
 ```
-
-**Rules:**
-- Include searchable keywords in the subject, not just the body
-- The subject should make sense without reading the body
-- Think: "What would I search for later?"
 
 ```
 Good:  [dri][cosmosdb] RU exhaustion ≠ hot partition — check autoscale ceiling
 Bad:   [dri] Investigation notes
 ```
 
-## Tag convention
+## Tags
 
-```
-[area][subtopic] One-line summary
-```
+Format: `[area][subtopic] Summary`. Combine freely. Auto-normalized to lowercase.
 
 | Tag | Purpose |
 |-----|---------|
-| `[dri]` | On-call lessons, incident learnings |
+| `[dri]` | On-call / incident learnings |
 | `[arch]` | Architecture decisions |
-| `[gotcha]` | Non-obvious traps that waste time |
-| `[workflow]` | Process and tooling patterns |
+| `[gotcha]` | Non-obvious traps |
+| `[workflow]` | Process / tooling patterns |
 | `[decision]` | Tech choices with rationale |
-| `[auto]` | AI auto-captured (use when storing without explicit user request) |
+| `[auto]` | AI auto-captured |
 
-Combine freely: `[dri][cosmosdb]`, `[gotcha][build]`, `[arch][rpaas]`
+## What to save vs skip
 
-Tags are auto-normalized to lowercase by the wrapper.
+The quality gate: "Would this save future-me 10+ minutes of investigation?" This filters out the ~80% of potential memories that are noise.
 
-## Capture heuristics
+**Save** — corrections to wrong mental models, non-obvious gotchas, architecture decisions with rationale, DRI root causes, API quirks not in docs, cost/perf numbers
 
-### SAVE (high value)
+**Skip** — anything already in docs/on disk, ephemeral content (playlists, brainstorms, one-time plans), WIP snapshots (save conclusions not journeys), things that change soon, preferences already in user profile
 
-- Corrections to wrong mental models ("I thought X but it's actually Y")
-- Non-obvious gotchas that wasted investigation time
-- Architecture decisions and rationale
-- DRI lessons and debugged root causes
-- Field mappings, API quirks, config locations not obvious from docs
-- Cost/performance numbers that change strategic decisions
+### Auto-capture (`[auto]` tag)
 
-### SKIP (noise)
+Apply a higher bar because historically 80% of auto-captures were noise. Only auto-save when:
+- User corrected a wrong assumption
+- A multi-step debugging session reached resolution
+- A non-obvious gotcha was discovered
 
-- Setup instructions that already exist on disk or in docs
-- Personal facts about colleagues
-- Things easily searchable in official documentation
-- Information that will change soon
-- Short commands without context
-- Ephemeral content: playlists, one-time plans, track lists, session energy notes
-- WIP snapshots of half-finished code changes (save the conclusion, not the journey)
-- Preferences already expressed in conversation or user profile
-- Things already stored in git, a database, or another system of record
-
-### Auto-capture rules
-
-When auto-saving with `[auto]` tag, apply a HIGHER bar than manual saves:
-
-- Only auto-save if the user corrected a wrong assumption, resolved a multi-step debugging session, or discovered a gotcha
-- Do NOT auto-save creative session outputs (playlists, brainstorms, drafts)
-- Do NOT auto-save mid-session WIP — wait for conclusions
-- If unsure, don't save. The user can always say "remember this"
-
-Audit finding: 80% of auto-captures were noise (playlist spam, stale WIP, duplicates). Only corrections to wrong mental models justified auto-save.
-
-### Quality gate
-
-Ask: "Would this save future-me 10+ minutes of investigation?"
-- Yes → store it
-- No → skip it
+If unsure, don't save — the user can always say "remember this."
 
 ## Session workflow
 
-1. **Start:** `git-mem recent 20` — load recent context
-2. **During work:** When you learn something non-obvious and reusable, store it immediately
-3. **End:** No action needed — memories persist automatically
+1. **Start:** `git-mem recent 20` — load context
+2. **During:** Store non-obvious, reusable learnings immediately
+3. **End:** Nothing needed — memories persist
 
 ## Branches as thought spaces (optional)
 
-```
-main                    ← verified, high-confidence memories
-├── brainstorm/apr2026  ← exploratory ideas, may be wrong
-├── incident/eus2001    ← all context for one incident
-└── project/foo         ← project-scoped, archive when done
-```
+Use branches to separate knowledge by confidence level or scope:
 
-| Pattern | Purpose | When to merge to main |
-|---------|---------|----------------------|
-| `main` | Proven knowledge | — |
-| `brainstorm/*` | Half-baked ideas | Cherry-pick survivors |
-| `incident/*` | Incident context dump | Merge DRI lessons only |
-| `project/*` | Project-specific | Merge learnings, archive branch |
+| Branch pattern | Purpose | Merge to main? |
+|----------------|---------|-----------------|
+| `main` | Verified knowledge | — |
+| `brainstorm/*` | Exploratory ideas | Cherry-pick survivors |
+| `incident/*` | Incident context | Merge DRI lessons only |
+| `project/*` | Project-scoped | Merge learnings, archive |
 
 ## Example
 
-User asks about CosmosDB performance. You investigate and discover RU exhaustion ≠ hot partition.
+Discover RU exhaustion ≠ hot partition during CosmosDB investigation:
 
-Store it:
 ```bash
 git-mem add "[dri][cosmosdb] RU exhaustion ≠ hot partition — check autoscale ceiling" \
   "100% normalized RU can mean container-level ceiling hit, not partition hotspot. Fix: increase autoScaleMaxThroughput in Bicep, not partition key redesign."
 ```
 
-Later session, user hits CosmosDB 408s:
+Later, user hits CosmosDB 408s:
 ```bash
-git-mem search cosmosdb
+git-mem search +cosmosdb
 git-mem show <hash>
 ```
