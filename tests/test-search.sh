@@ -1,26 +1,13 @@
 #!/usr/bin/env bash
 # test-search.sh — search tests for git-mem (OR, AND, case-insensitive)
-# Run from the git-memory repo root: ./tests/test-search.sh
 set -euo pipefail
-
-# --- Test harness ---
-PASS=0
-FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GIT_MEM="$SCRIPT_DIR/../git-mem"
+source "$SCRIPT_DIR/test-utils.sh"
+
 export GIT_MEMORY_DIR
 GIT_MEMORY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/git-mem-search-XXXXXX")
-
-export GIT_AUTHOR_NAME="git-mem-test"
-export GIT_AUTHOR_EMAIL="test@test"
-export GIT_COMMITTER_NAME="git-mem-test"
-export GIT_COMMITTER_EMAIL="test@test"
-
 cleanup() { rm -rf "$GIT_MEMORY_DIR"; }
 trap cleanup EXIT
-
-pass() { PASS=$((PASS + 1)); echo "  ✓ $1"; }
-fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1" >&2; }
 
 # --- Setup: seed memories ---
 bash "$GIT_MEM" init >/dev/null 2>&1
@@ -100,9 +87,4 @@ echo "=== Empty search ==="
 output=$(bash "$GIT_MEM" search 2>&1) || true
 if echo "$output" | grep -qi "usage\|error"; then pass "empty search shows error"; else fail "empty search should error"; fi
 
-# --- Summary ---
-echo ""
-echo "================================"
-echo "  Passed: $PASS   Failed: $FAIL"
-echo "================================"
-[[ $FAIL -eq 0 ]] && exit 0 || exit 1
+print_summary

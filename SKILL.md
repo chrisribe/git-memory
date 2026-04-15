@@ -41,6 +41,11 @@ git-mem search cosmosdb throttle       # OR: any word matches
 ```bash
 git-mem recent 20     # browse recent (run at session start for context)
 git-mem show <hash>   # full memory content
+git-mem forget <hash>               # retract a memory (append-only, reversible)
+git-mem forget <hash> --reason "…"  # retract with reason
+git-mem resurface                   # list retracted memories
+git-mem resurface cosmosdb          # search retracted memories
+git-mem resurface --restore <hash>  # restore a retracted memory
 git-mem tags          # list all tags
 git-mem stats         # store statistics
 git-mem sync          # push/pull across machines
@@ -101,6 +106,21 @@ Apply a higher bar because historically 80% of auto-captures were noise. Only au
 - A non-obvious gotcha was discovered
 
 If unsure, don't save — the user can always say "remember this."
+
+## When to forget
+
+Memories are never truly deleted — `forget` appends a retraction commit. The original is hidden from search/recent but still exists in git history. `resurface --restore` brings it back.
+
+**Forget** — superseded knowledge (you learned the real answer), one-off incident context after resolution, noisy `[auto]` captures that failed the quality bar, wrong mental models you don't want polluting future searches
+
+**Don't forget** — anything you're unsure about (use `resurface` later to review), root cause learnings even if the system changed, architecture decisions (the rationale still matters)
+
+```bash
+git-mem forget abc1234                          # retract
+git-mem forget abc1234 --reason "wrong — real cause was X"
+git-mem resurface                               # browse retracted pool
+git-mem resurface --restore abc1234             # bring it back
+```
 
 ## Session workflow
 

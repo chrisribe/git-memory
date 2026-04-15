@@ -1,53 +1,13 @@
 #!/usr/bin/env bash
 # test-basic.sh — smoke tests for git-mem core commands
-# Run from the git-memory repo root: ./tests/test-basic.sh
 set -euo pipefail
-
-# --- Test harness ---
-PASS=0
-FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GIT_MEM="$SCRIPT_DIR/../git-mem"
+source "$SCRIPT_DIR/test-utils.sh"
+
 export GIT_MEMORY_DIR
 GIT_MEMORY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/git-mem-test-XXXXXX")
-
-# Ensure git has a user configured (needed for commits in CI/clean environments)
-export GIT_AUTHOR_NAME="git-mem-test"
-export GIT_AUTHOR_EMAIL="test@test"
-export GIT_COMMITTER_NAME="git-mem-test"
-export GIT_COMMITTER_EMAIL="test@test"
-
 cleanup() { rm -rf "$GIT_MEMORY_DIR"; }
 trap cleanup EXIT
-
-pass() { PASS=$((PASS + 1)); echo "  ✓ $1"; }
-fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1" >&2; }
-
-assert_exit_0() {
-    local desc="$1"; shift
-    if "$@" >/dev/null 2>&1; then pass "$desc"; else fail "$desc"; fi
-}
-
-assert_exit_nonzero() {
-    local desc="$1"; shift
-    if "$@" >/dev/null 2>&1; then fail "$desc"; else pass "$desc"; fi
-}
-
-assert_output_contains() {
-    local desc="$1"; shift
-    local needle="$1"; shift
-    local output
-    output=$("$@" 2>&1) || true
-    if echo "$output" | grep -qi "$needle"; then pass "$desc"; else fail "$desc (expected '$needle' in output)"; fi
-}
-
-assert_output_not_contains() {
-    local desc="$1"; shift
-    local needle="$1"; shift
-    local output
-    output=$("$@" 2>&1) || true
-    if echo "$output" | grep -qi "$needle"; then fail "$desc (found '$needle' in output)"; else pass "$desc"; fi
-}
 
 # --- Tests ---
 
@@ -123,13 +83,4 @@ rm -rf "$BAD_DIR"
 assert_exit_nonzero "fails without repo" env GIT_MEMORY_DIR="$BAD_DIR" bash "$GIT_MEM" add "[test] should fail"
 assert_exit_nonzero "unknown command fails" bash "$GIT_MEM" notacommand
 
-echo ""
-echo "=== sync (no remote) ==="
-assert_exit_nonzero "sync fails without remote" bash "$GIT_MEM" sync
-
-# --- Summary ---
-echo ""
-echo "================================"
-echo "  Passed: $PASS   Failed: $FAIL"
-echo "================================"
-[[ $FAIL -eq 0 ]] && exit 0 || exit 1
+print_summary

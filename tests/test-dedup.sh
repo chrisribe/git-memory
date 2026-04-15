@@ -1,26 +1,13 @@
 #!/usr/bin/env bash
 # test-dedup.sh — dedup detection tests for git-mem
-# Run from the git-memory repo root: ./tests/test-dedup.sh
 set -euo pipefail
-
-# --- Test harness ---
-PASS=0
-FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GIT_MEM="$SCRIPT_DIR/../git-mem"
+source "$SCRIPT_DIR/test-utils.sh"
+
 export GIT_MEMORY_DIR
 GIT_MEMORY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/git-mem-dedup-XXXXXX")
-
-export GIT_AUTHOR_NAME="git-mem-test"
-export GIT_AUTHOR_EMAIL="test@test"
-export GIT_COMMITTER_NAME="git-mem-test"
-export GIT_COMMITTER_EMAIL="test@test"
-
 cleanup() { rm -rf "$GIT_MEMORY_DIR"; }
 trap cleanup EXIT
-
-pass() { PASS=$((PASS + 1)); echo "  ✓ $1"; }
-fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1" >&2; }
 
 # --- Setup ---
 bash "$GIT_MEM" init >/dev/null 2>&1
@@ -95,9 +82,4 @@ fi
 rm -rf "$EMPTY_DIR"
 export GIT_MEMORY_DIR="$GIT_MEMORY_DIR_ORIG"
 
-# --- Summary ---
-echo ""
-echo "================================"
-echo "  Passed: $PASS   Failed: $FAIL"
-echo "================================"
-[[ $FAIL -eq 0 ]] && exit 0 || exit 1
+print_summary

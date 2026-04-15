@@ -1,29 +1,15 @@
 #!/usr/bin/env bash
 # test-sync.sh — sync tests for git-mem (two-repo simulation)
-# Run from the git-memory repo root: ./tests/test-sync.sh
 set -euo pipefail
-
-# --- Test harness ---
-PASS=0
-FAIL=0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GIT_MEM="$SCRIPT_DIR/../git-mem"
-
-export GIT_AUTHOR_NAME="git-mem-test"
-export GIT_AUTHOR_EMAIL="test@test"
-export GIT_COMMITTER_NAME="git-mem-test"
-export GIT_COMMITTER_EMAIL="test@test"
+source "$SCRIPT_DIR/test-utils.sh"
 
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/git-mem-sync-XXXXXX")
 BARE_REPO="$TEST_ROOT/remote.git"
 MACHINE_A="$TEST_ROOT/machine-a"
 MACHINE_B="$TEST_ROOT/machine-b"
-
 cleanup() { rm -rf "$TEST_ROOT"; }
 trap cleanup EXIT
-
-pass() { PASS=$((PASS + 1)); echo "  ✓ $1"; }
-fail() { FAIL=$((FAIL + 1)); echo "  ✗ $1" >&2; }
 
 # --- Setup: bare remote + two clones ---
 
@@ -122,9 +108,4 @@ else
 fi
 rm -rf "$NO_REMOTE_DIR"
 
-# --- Summary ---
-echo ""
-echo "================================"
-echo "  Passed: $PASS   Failed: $FAIL"
-echo "================================"
-[[ $FAIL -eq 0 ]] && exit 0 || exit 1
+print_summary

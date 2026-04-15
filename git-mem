@@ -42,6 +42,10 @@ COMMANDS
   search --json <query>       Search with JSON output (for agents)
   show <hash>                 Show full content of a memory
   show --json <hash>          Show full content as JSON (for agents)
+  forget <hash>               Retract a memory (append-only, no history rewrite)
+  forget <hash> --reason "…"  Retract with reason
+  resurface [query]           Search retracted memories only
+  resurface --restore <hash>  Restore a retracted memory
   recent [n]                  Browse recent memories (default: 20)
   tags                        List all tags with counts
   stats                       Memory statistics
@@ -58,6 +62,10 @@ EXAMPLES
   git-mem search cosmosdb throttle
   git-mem search +cosmosdb +partition     # both must match
   git-mem edit                            # opens editor for multi-line
+  git-mem forget abc1234                  # retract a memory
+  git-mem forget abc1234 --reason "superseded by new finding"
+  git-mem resurface cosmosdb              # search retracted memories
+  git-mem resurface --restore abc1234     # un-retract a memory
   git-mem tags
   git-mem sync
 EOF
@@ -162,6 +170,31 @@ json_escape_str() {
     printf '%s' "$s"
 }
 
+# --- Retraction helpers ---
+# Returns full hashes of memories that are currently retracted (retracted minus restored).
+# Single-pass: dump all subjects+bodies, count retractions and restorations per hash.
+get_retracted_set() {
+    gc log --format="%s%n%b" --all 2>/dev/null | awk '
+    /^\[retracted\]/ { next }
+    /^\[restored\]/ { next }
+    /^Retracted: / { retracted[substr($0, 12)]++ ; next }
+    /^Restored: /  { restored[substr($0, 11)]++  ; next }
+    END {
+        for (h in retracted) {
+            if (retracted[h] > (restored[h]+0)) print h
+        }
+    }'
+}
+
+# Check if a short hash matches any full hash in the retracted set.
+# Usage: echo "$retracted_set" | is_retracted "$short_hash"
+is_hash_retracted() {
+    local short="$1"
+    local retracted_set="$2"
+    [[ -z "$retracted_set" ]] && return 1
+    echo "$retracted_set" | grep -q "^${short}\|${short}" 2>/dev/null
+}
+
 # --- Fuzzy multi-keyword search ---
 # OR mode: single git-log piped to awk (avoids N git calls per search term).
 # AND mode: uses git's native --all-match --grep (already single-process).
@@ -201,17 +234,48 @@ cmd_search() {
     [[ $json_mode -eq 1 ]] && fmt="%h%x01%aI%x01%s"
 
     local raw_results
+    # Get retracted hashes once
+    local retracted_set
+    retracted_set=$(get_retracted_set)
+
     if [[ "$mode" == "or" ]]; then
-        raw_results=$(gc log --format="$fmt" --all 2>/dev/null | awk -v terms="$terms_pipe" '
+        # Build retracted pattern for awk (pipe-separated full hashes)
+        local retracted_pipe
+        retracted_pipe=$(echo "$retracted_set" | paste -sd'|' 2>/dev/null || true)
+        raw_results=$(gc log --format="$fmt" --all 2>/dev/null | awk -v terms="$terms_pipe" -v retracted="$retracted_pipe" '
         BEGIN { n = split(tolower(terms), tarr, "|") }
         {
             low = tolower($0)
+            # Skip retraction/restore meta-commits
+            if (index(low, "[retracted]") > 0) next
+            if (index(low, "[restored]") > 0) next
+            # Skip retracted original memories (match short hash at start of line)
+            if (retracted != "") {
+                split($0, parts, " ")
+                hash = parts[1]
+                # Also handle \x01 delimiter for JSON format
+                split(hash, hparts, "\x01")
+                hash = hparts[1]
+                rn = split(retracted, rarr, "|")
+                for (r = 1; r <= rn; r++) {
+                    if (index(rarr[r], hash) == 1) next
+                }
+            }
             for (i = 1; i <= n; i++) {
                 if (index(low, tarr[i]) > 0) { print; next }
             }
         }')
     else
         raw_results=$(gc log --format="$fmt" --all -i --all-match "${grep_args[@]}" 2>/dev/null || true)
+        # Filter out retraction/restore meta-commits and retracted originals
+        if [[ -n "$raw_results" ]]; then
+            raw_results=$(echo "$raw_results" | grep -iv '\[retracted\]' | grep -iv '\[restored\]' || true)
+            if [[ -n "$retracted_set" ]]; then
+                local filter_pattern
+                filter_pattern=$(echo "$retracted_set" | cut -c1-7 | sed 's/^/^/' | paste -sd'|')
+                raw_results=$(echo "$raw_results" | grep -ivE "$filter_pattern" || true)
+            fi
+        fi
     fi
 
     if [[ -z "$raw_results" ]]; then
@@ -381,7 +445,22 @@ cmd_show() {
 cmd_recent() {
     ensure_repo
     local n="${1:-20}"
-    gc log --oneline "-$n"
+    local retracted_set
+    retracted_set=$(get_retracted_set)
+
+    if [[ -n "$retracted_set" ]]; then
+        local filter_pattern
+        # Trim full hashes to 7-char prefix to match --oneline short hashes
+        filter_pattern=$(echo "$retracted_set" | cut -c1-7 | sed 's/^/^/' | paste -sd'|')
+        gc log --oneline --all 2>/dev/null \
+            | grep -Fv '[retracted]' | grep -Fv '[restored]' \
+            | grep -ivE "$filter_pattern" \
+            | head -"$n"
+    else
+        gc log --oneline --all 2>/dev/null \
+            | grep -Fv '[retracted]' | grep -Fv '[restored]' \
+            | head -"$n"
+    fi
 }
 
 cmd_tags() {
@@ -427,6 +506,157 @@ cmd_stats() {
     echo -e "${COLOR_GREEN}Last 7 days:${COLOR_RESET} $recent"
 }
 
+cmd_forget() {
+    ensure_repo
+    [[ $# -eq 0 ]] && die "Usage: git-mem forget <hash> [--reason \"reason\"]"
+
+    local hash=""
+    local reason=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reason) shift; reason="${1:-}"; [[ -z "$reason" ]] && die "--reason requires a value" ;;
+            *) hash="$1" ;;
+        esac
+        shift
+    done
+    [[ -z "$hash" ]] && die "Usage: git-mem forget <hash> [--reason \"reason\"]"
+
+    # Verify the commit exists and get its details
+    local orig_subject orig_date full_hash
+    orig_subject=$(gc log -1 --format="%s" "$hash" 2>/dev/null) || die "Not found: $hash"
+    orig_date=$(gc log -1 --format="%aI" "$hash" 2>/dev/null)
+    full_hash=$(gc log -1 --format="%H" "$hash" 2>/dev/null)
+
+    # Check if already retracted
+    local retracted_set
+    retracted_set=$(get_retracted_set)
+    if echo "$retracted_set" | grep -q "$full_hash" 2>/dev/null; then
+        die "Already retracted. Use: git-mem resurface --restore $hash"
+    fi
+
+    # Build retraction commit
+    local body="Retracted: ${full_hash}\nOriginal date: ${orig_date}"
+    [[ -n "$reason" ]] && body="${body}\nReason: ${reason}"
+
+    gc commit --allow-empty -m "[retracted] ${orig_subject}" -m "$(echo -e "$body")"
+    echo -e "${COLOR_GREEN}Retracted:${COLOR_RESET} ${orig_subject}"
+    echo -e "${COLOR_DIM}(Original still exists. Restore with: git-mem resurface --restore ${hash})${COLOR_RESET}"
+}
+
+cmd_resurface() {
+    ensure_repo
+
+    local restore_mode=0
+    local restore_hash=""
+    local terms=()
+    local json_mode=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            --restore) restore_mode=1 ;;
+            --json) json_mode=1 ;;
+            *)
+                if [[ $restore_mode -eq 1 && -z "$restore_hash" ]]; then
+                    restore_hash="$arg"
+                else
+                    terms+=("$arg")
+                fi
+                ;;
+        esac
+    done
+
+    # --- Restore mode ---
+    if [[ $restore_mode -eq 1 ]]; then
+        [[ -z "$restore_hash" ]] && die "Usage: git-mem resurface --restore <hash>"
+
+        local orig_subject full_hash
+        orig_subject=$(gc log -1 --format="%s" "$restore_hash" 2>/dev/null) || die "Not found: $restore_hash"
+        full_hash=$(gc log -1 --format="%H" "$restore_hash" 2>/dev/null)
+
+        # Verify it's actually retracted
+        local retracted_set
+        retracted_set=$(get_retracted_set)
+        if ! echo "$retracted_set" | grep -q "$full_hash" 2>/dev/null; then
+            die "Not currently retracted: $restore_hash"
+        fi
+
+        gc commit --allow-empty -m "[restored] ${orig_subject}" -m "Restored: ${full_hash}"
+        echo -e "${COLOR_GREEN}Restored:${COLOR_RESET} ${orig_subject}"
+        return 0
+    fi
+
+    # --- Search retracted memories ---
+    local effective_retracted
+    effective_retracted=$(get_retracted_set)
+
+    if [[ -z "$effective_retracted" ]]; then
+        if [[ $json_mode -eq 1 ]]; then
+            echo "[]"
+        else
+            echo "No retracted memories."
+        fi
+        return 0
+    fi
+
+    # Get details for each retracted hash
+    local fmt="%h %s"
+    [[ $json_mode -eq 1 ]] && fmt="%h%x01%aI%x01%s"
+
+    local results=""
+    while IFS= read -r full_h; do
+        [[ -z "$full_h" ]] && continue
+        local line
+        line=$(gc log -1 --format="$fmt" "$full_h" 2>/dev/null || true)
+        [[ -z "$line" ]] && continue
+
+        # If search terms provided, filter
+        if [[ ${#terms[@]} -gt 0 ]]; then
+            local low
+            low=$(echo "$line" | tr '[:upper:]' '[:lower:]')
+            local matched=0
+            for term in "${terms[@]}"; do
+                local low_term
+                low_term=$(echo "$term" | tr '[:upper:]' '[:lower:]')
+                if [[ "$low" == *"$low_term"* ]]; then
+                    matched=1
+                    break
+                fi
+            done
+            [[ $matched -eq 0 ]] && continue
+        fi
+
+        results+="${line}"$'\n'
+    done <<< "$effective_retracted"
+
+    results=$(echo -n "$results" | sed '/^$/d')
+
+    if [[ -z "$results" ]]; then
+        if [[ $json_mode -eq 1 ]]; then
+            echo "[]"
+        else
+            echo "No results."
+        fi
+    elif [[ $json_mode -eq 1 ]]; then
+        local first=1
+        echo -n "["
+        while IFS=$'\x01' read -r hash date subj; do
+            [[ -z "$hash" ]] && continue
+            subj=$(json_escape_str "$subj")
+            [[ $first -eq 0 ]] && printf ","
+            first=0
+            printf '{"hash":"%s","date":"%s","subject":"%s","retracted":true}' "$hash" "$date" "$subj"
+        done <<< "$results"
+        echo "]"
+    else
+        echo -e "${COLOR_YELLOW}Retracted memories:${COLOR_RESET}"
+        echo "$results" | while IFS= read -r line; do
+            local hash="${line%% *}"
+            local rest="${line#* }"
+            echo -e "  ${COLOR_DIM}${hash}${COLOR_RESET} ${rest}"
+        done
+    fi
+}
+
 cmd_sync() {
     ensure_repo
     local has_remote
@@ -465,6 +695,8 @@ case "$cmd" in
     edit)       cmd_edit "$@" ;;
     search|recall|find|grep)  cmd_search "$@" ;;
     show)       cmd_show "$@" ;;
+    forget|retract)  cmd_forget "$@" ;;
+    resurface)  cmd_resurface "$@" ;;
     recent|ls)  cmd_recent "$@" ;;
     tags)       cmd_tags "$@" ;;
     stats)      cmd_stats "$@" ;;

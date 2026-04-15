@@ -7,6 +7,7 @@ TOTAL_PASS=0
 TOTAL_FAIL=0
 
 for test_file in "$SCRIPT_DIR"/test-*.sh; do
+    [[ "$(basename "$test_file")" == "test-utils.sh" ]] && continue
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Running: $(basename "$test_file")"
