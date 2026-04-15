@@ -264,4 +264,8 @@ git-memory wins on no-network, no-service-dependency, total privacy control.
 
 Working. Wrapper script (`git-mem`), installer, 54 passing tests. See [PLAN.md](PLAN.md) for roadmap.
 
-Origin: [April 2, 2026 brain-fart session](https://github.com/chrisribe/simple-memory-mcp) exploring the simple-memory-mcp ecosystem, MCP vs skills trade-offs, and editor lock-in.
+---
+
+## Acknowledgments
+
+This project grew out of [simple-memory-mcp](https://github.com/chrisribe/simple-memory-mcp) — an MCP-based memory server I built and used as my daily driver. simple-memory taught me what mattered in a memory system (fast search, tags, dedup) and what didn't (servers, protocols, runtimes). git-memory is the "less is more" rewrite: same workflow, zero infrastructure. If you want richer features (full-text search, GraphQL API, relations), simple-memory-mcp is still the better tool. If you want something that works everywhere git does with nothing to install or keep running, this is it.
