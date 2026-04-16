@@ -106,7 +106,12 @@ for i, mem in enumerate(memories_sorted):
     body = '\n'.join(body_lines).strip()
 
     # Set commit env for timestamp preservation
+    # Set identity locally in env to avoid touching global git config
     env = os.environ.copy()
+    env['GIT_AUTHOR_NAME'] = 'git-mem-migrate'
+    env['GIT_AUTHOR_EMAIL'] = 'migrate@git-mem.local'
+    env['GIT_COMMITTER_NAME'] = 'git-mem-migrate'
+    env['GIT_COMMITTER_EMAIL'] = 'migrate@git-mem.local'
     env['GIT_AUTHOR_DATE'] = created_at
     env['GIT_COMMITTER_DATE'] = created_at
 
