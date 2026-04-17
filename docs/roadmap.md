@@ -3,6 +3,7 @@
 ## Done
 
 - [x] Git Bash (Windows) — 54/54 tests passing
+- [x] WSL2 (Ubuntu) — 54/54 tests passing
 - [x] Dedup checks subject + body, `--yes` flag for non-interactive use
 - [x] `search --json` and `show --json` for agent output
 - [x] `forget` / `resurface` / `resurface --restore` (append-only retraction)
@@ -13,7 +14,8 @@
 ## Up Next
 
 ### Cross-platform testing
-- [ ] WSL2, macOS zsh, Ubuntu bash, Termux
+- [x] WSL2 — 54/54 tests passing, colors working
+- [ ] macOS zsh, Termux
 - [ ] Verify `$EDITOR` → `$VISUAL` → `vi` fallback chain
 - [ ] Verify color output degrades when piped (`| less`, `> file`)
 - **Known:** `grep -oE` (BSD vs GNU) and `wc -l` whitespace (macOS) — mitigations in place, need verification

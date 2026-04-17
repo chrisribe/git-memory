@@ -52,6 +52,20 @@ git-mem sync          # push/pull across machines
 git-mem export        # export all memories
 ```
 
+## Connect an existing memories repo
+
+If the user already has a remote memory repo and just ran `git-mem init` (empty local store):
+
+```bash
+cd ~/memory-store
+git remote add origin https://github.com/USER/memories.git
+git fetch origin
+git reset origin/main          # align local to remote (safe — local is empty)
+git branch -u origin/main      # set tracking for git-mem sync
+```
+
+If the local store already has commits, use `git pull origin main --rebase` instead of `reset`.
+
 ## Fallback: raw git (only if git-mem is not on PATH)
 
 Only use these if `git-mem` is genuinely unavailable (e.g., not installed). Prefer `git-mem` — it adds dedup checks and tag normalization that raw git lacks.

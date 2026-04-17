@@ -219,12 +219,19 @@ git memories
 git remote add origin git@github.com:you/memory-store.git
 git push -u origin main
 
+# Connect an existing memories repo to a fresh local store
+git-mem init
+cd ~/memory-store
+git remote add origin https://github.com/you/memory-store.git
+git fetch origin
+git reset origin/main        # fast-forward (safe — local is empty)
+git branch -u origin/main    # set tracking for git-mem sync
+
+# After setup, sync is one command
+git-mem sync                 # pull --rebase then push
+
 # Offline backup (single file)
 git bundle create memory-$(date +%Y%m%d).bundle --all
-
-# Merge memories from another machine
-git fetch origin
-git merge origin/main  # almost never conflicts (append-only)
 ```
 
 Works on: WSL, SAW, devbox, phone (Termux), CI, bare Linux box, anywhere.
@@ -251,26 +258,9 @@ Copy `SKILL.md` to wherever your agent reads instructions. The file is plain mar
 
 ---
 
-## Compared to Plan A (GitHub Issues as memory)
-
-| | git-memory | GitHub Issues |
-|---|---|---|
-| Offline | ✅ | ❌ |
-| Private by default | ✅ | Requires private repo |
-| No external service | ✅ | Requires GitHub up |
-| CLI | `git-mem search` | `gh issue comment list` |
-| Reactions/voting | ❌ | ✅ |
-| Web UI | `git log` or any git GUI | GitHub web |
-| Mobile access | Termux | GitHub mobile |
-
-GitHub Issues wins on discoverability and reactions-as-quality-signal.
-git-memory wins on no-network, no-service-dependency, total privacy control.
-
----
-
 ## Status
 
-Working. Wrapper script (`git-mem`), installer, 54 passing tests. See [PLAN.md](PLAN.md) for roadmap.
+Working. Wrapper script (`git-mem`), installer, 54 passing tests. See [docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ---
 
