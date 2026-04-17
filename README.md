@@ -19,6 +19,14 @@ The irony of MCP memory systems: they add a protocol layer to solve portability,
 
 ---
 
+## Docs
+
+- [SKILL.md](SKILL.md) — agent instructions, capture heuristics, session workflow
+- [docs/benchmark.md](docs/benchmark.md) — performance comparison vs simple-memory MCP (800+ memories)
+- [docs/roadmap.md](docs/roadmap.md) — planned features and open design questions
+
+---
+
 ## How It Works
 
 The database is a git repo. Every memory is an empty commit. The repo has no files — ever.
