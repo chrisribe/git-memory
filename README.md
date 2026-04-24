@@ -29,11 +29,11 @@ The irony of MCP memory systems: they add a protocol layer to solve portability,
 
 ## How It Works
 
-The database is a git repo. Every memory is an empty commit. The repo has no files — ever.
+The memory store is a git repository. Every memory is stored as an empty commit. The repo has no files — ever.
 
 ```
 memory-store/
-└── .git/    ← the ENTIRE database lives here
+└── .git/    ← the ENTIRE memory store lives here
              (no other files)
 ```
 
@@ -154,7 +154,7 @@ Environment variables only. Zero config files.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GIT_MEMORY_DIR` | `~/memory-store` | Path to memory store repo |
+| `GIT_MEMORY_DIR` | `~/memory-store` | Path to the memory store |
 | `GIT_MEMORY_DEDUP_THRESHOLD` | `3` | Min word overlap to trigger dedup warning |
 
 ```bash
@@ -167,7 +167,7 @@ git-mem add "[dri] something work-related"
 
 ## Tag Convention
 
-Tags go in square brackets at the start of the commit subject:
+Tags go in square brackets at the start of the subject line:
 
 ```
 [area][subtopic] One-line summary
@@ -219,7 +219,7 @@ git memories
 git remote add origin git@github.com:you/memory-store.git
 git push -u origin main
 
-# Connect an existing memories repo to a fresh local store
+# Connect an existing remote memory store to a fresh local store
 git-mem init
 cd ~/memory-store
 git remote add origin https://github.com/you/memory-store.git
