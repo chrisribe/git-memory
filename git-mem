@@ -332,7 +332,11 @@ cmd_add() {
     [[ ${#args[@]} -eq 0 ]] && die "Usage: git-mem add [--yes] \"[tags] summary\" [\"body\"]"
 
     local subject="${args[0]}"
-    local body="${args[1]:-}"
+    # Join all args after subject with newlines (handles Windows .cmd %* newline split)
+    local body=""
+    if [[ ${#args[@]} -gt 1 ]]; then
+        body=$(IFS=$'\n'; echo "${args[*]:1}")
+    fi
 
     # Normalize and validate
     subject=$(normalize_tags "$subject")
