@@ -315,6 +315,29 @@ cmd_init() {
     fi
     mkdir -p "$GIT_MEMORY_DIR"
     git init "$GIT_MEMORY_DIR"
+
+    # Create README
+    cat > "$GIT_MEMORY_DIR/README.md" <<'README'
+# Memory Store
+
+This is a [git-memory](https://github.com/chrisribe/git-memory) repository.
+
+Memories are stored as **empty commits** — the knowledge lives in commit messages, not files. This README is the only file.
+
+## Quick reference
+
+```bash
+git-mem add "[tag] summary"    # store
+git-mem search keyword         # find
+git-mem recent                 # browse
+git-mem sync                   # push/pull
+```
+
+See the [git-memory docs](https://github.com/chrisribe/git-memory) for full usage.
+README
+
+    gc add README.md
+    gc commit -m "[meta] Initialize memory store"
     echo -e "${COLOR_GREEN}Memory store initialized at $GIT_MEMORY_DIR${COLOR_RESET}"
 }
 
