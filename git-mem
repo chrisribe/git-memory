@@ -36,6 +36,7 @@ COMMANDS
   init                        Initialize memory store
   add  "[tags] summary"       Store a memory (with dedup check)
   add  --yes "[tags] msg"     Store without dedup prompt (for agents)
+  add  --stdin "[tags] msg"   Read body from stdin (multi-line safe)
   edit                        Store a memory via $EDITOR (multi-line)
   search <query>              Fuzzy multi-keyword search (OR by default)
   search +word1 +word2        AND search (all words must match)
@@ -66,6 +67,7 @@ EXAMPLES
   git-mem forget abc1234 --reason "superseded by new finding"
   git-mem resurface cosmosdb              # search retracted memories
   git-mem resurface --restore abc1234     # un-retract a memory
+  echo "multi-line body" | git-mem add --yes --stdin "[tags] subject"  # pipe body
   git-mem tags
   git-mem sync
 EOF
@@ -344,21 +346,28 @@ README
 cmd_add() {
     ensure_repo
     local yes_mode=0
+    local stdin_mode=0
     local args=()
     for arg in "$@"; do
         case "$arg" in
             --yes|-y) yes_mode=1 ;;
+            --stdin) stdin_mode=1 ;;
             *) args+=("$arg") ;;
         esac
     done
 
-    [[ ${#args[@]} -eq 0 ]] && die "Usage: git-mem add [--yes] \"[tags] summary\" [\"body\"]"
+    [[ ${#args[@]} -eq 0 ]] && die "Usage: git-mem add [--yes] [--stdin] \"[tags] summary\" [\"body\"]"
 
     local subject="${args[0]}"
-    # Join all args after subject with newlines (handles Windows .cmd %* newline split)
     local body=""
-    if [[ ${#args[@]} -gt 1 ]]; then
+    if [[ $stdin_mode -eq 1 ]]; then
+        # Read body from stdin — bypasses shell argument newline mangling (Windows .cmd %* bug)
+        body=$(cat)
+    elif [[ ${#args[@]} -gt 1 ]]; then
+        # Join all args after subject with newlines (handles Windows .cmd %* newline split)
         body=$(IFS=$'\n'; echo "${args[*]:1}")
+        echo -e "${COLOR_YELLOW}hint:${COLOR_RESET} Body passed as argument (may truncate on Windows). Prefer --stdin for multi-line:" >&2
+        echo -e "      echo \"body\" | git-mem add --stdin \"[tags] subject\"" >&2
     fi
 
     # Normalize and validate
