@@ -39,6 +39,18 @@ git-mem search +cosmosdb +partition    # AND: all words must match
 git-mem search cosmosdb throttle       # OR: any word matches
 ```
 
+### Data quality check
+
+When retrieving memories, watch for **truncation signals** — bodies that were silently clipped:
+
+- Body ends with `:` (introducing a list that got cut off)
+- Body is a single line when the subject implies detailed content (e.g., "full recipe", "complete checklist", "architecture")
+- Body ends mid-sentence or mid-word
+
+If you detect truncation, **tell the user** instead of silently working with partial data:
+
+> "⚠️ This memory appears truncated (body ends with `:`). Want me to search sessions or the codebase for the full context?"
+
 ### Other commands
 
 ```bash
