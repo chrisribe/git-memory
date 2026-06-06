@@ -176,11 +176,17 @@ json_escape_str() {
 # Returns full hashes of memories that are currently retracted (retracted minus restored).
 # Single-pass: dump all subjects+bodies, count retractions and restorations per hash.
 get_retracted_set() {
+    # Emits only validated commit hashes. The captured value is taken as the first
+    # whitespace-delimited token and must be hex — this guards against legacy/corrupt
+    # retraction commits whose body held subject text. Such garbage previously leaked
+    # into the regex filter (cmd_recent/cmd_search) and broke grep with patterns like
+    # '^[build-' → "Invalid range end" under stricter greps (MSYS2/git-bash). CR is
+    # stripped for Windows CRLF safety.
     gc log --format="%s%n%b" --all 2>/dev/null | awk '
     /^\[retracted\]/ { next }
     /^\[restored\]/ { next }
-    /^Retracted: / { retracted[substr($0, 12)]++ ; next }
-    /^Restored: /  { restored[substr($0, 11)]++  ; next }
+    /^Retracted: / { h=substr($0,12); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) retracted[h]++; next }
+    /^Restored: /  { h=substr($0,11); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) restored[h]++; next }
     END {
         for (h in retracted) {
             if (retracted[h] > (restored[h]+0)) print h
