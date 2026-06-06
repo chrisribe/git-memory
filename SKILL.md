@@ -23,9 +23,12 @@ Store location: `~/memory-store` (override with `GIT_MEMORY_DIR`).
 
 ```bash
 git-mem add "[tags] summary"                          # one-liner
-git-mem add "[tags] summary" "Detail body text."      # with body
+git-mem add "[tags] summary" "Single-line body."      # with body (single line only)
 git-mem add --yes "[auto][tags] summary"              # non-interactive (agent use)
+echo "Multi-line body here." | git-mem add --yes --stdin "[tags] summary"  # multi-line safe
 ```
+
+> **Multi-line bodies:** Always use `--stdin` with a pipe for bodies containing newlines. The positional body argument is truncated at the first newline on Windows due to `.cmd` argument passing limitations.
 
 ### Search
 
@@ -35,6 +38,18 @@ Default to AND search — OR gets noisy with 2+ terms because it matches any wor
 git-mem search +cosmosdb +partition    # AND: all words must match
 git-mem search cosmosdb throttle       # OR: any word matches
 ```
+
+### Data quality check
+
+When retrieving memories, watch for **truncation signals** — bodies that were silently clipped:
+
+- Body ends with `:` (introducing a list that got cut off)
+- Body is a single line when the subject implies detailed content (e.g., "full recipe", "complete checklist", "architecture")
+- Body ends mid-sentence or mid-word
+
+If you detect truncation, **tell the user** instead of silently working with partial data:
+
+> "⚠️ This memory appears truncated (body ends with `:`). Want me to search sessions or the codebase for the full context?"
 
 ### Other commands
 
