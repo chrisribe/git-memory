@@ -1,6 +1,7 @@
 ---
 name: git-memory
 description: "Zero-dependency persistent memory using git empty commits. Use when the user wants to remember information across sessions, store learnings, save context for later, or build a personal knowledge base. Also use when: 'remember this', 'save for later', 'don't forget', memory store, knowledge persistence, or any request to preserve information beyond the current conversation. Use even when the user doesn't say 'memory' explicitly — any desire to retain knowledge across sessions qualifies. Works offline, syncs via git, requires only git CLI."
+user-invocable: true
 ---
 
 # git-memory
@@ -69,17 +70,18 @@ git-mem export        # export all memories
 
 ## Connect an existing memories repo
 
-If the user already has a remote memory repo and just ran `git-mem init` (empty local store):
+Pass the remote URL to `init` — it clones the repo directly:
 
 ```bash
-cd ~/memory-store
-git remote add origin https://github.com/USER/memories.git
-git fetch origin
-git reset origin/main          # align local to remote (safe — local is empty)
-git branch -u origin/main      # set tracking for git-mem sync
+git-mem init https://github.com/you/memories.git
 ```
 
-If the local store already has commits, use `git pull origin main --rebase` instead of `reset`.
+If you already ran `git-mem init` without a URL and want to start over:
+
+```bash
+rm -rf ~/memory-store
+git-mem init https://github.com/you/memories.git
+```
 
 ## Fallback: raw git (only if git-mem is not on PATH)
 

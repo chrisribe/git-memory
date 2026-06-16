@@ -56,6 +56,9 @@ cd git-memory
 ./install.sh
 ```
 
+The installer copies the Copilot skill to `~/.agents/skills/git-memory/SKILL.md`.
+If you run the installer with `sudo`, the skill may end up under `/root/.agents/skills/git-memory` instead of your user profile and will not appear in your normal VS Code session.
+
 ### Manual
 
 Copy `git-mem` anywhere on your `$PATH` and make it executable:
@@ -215,17 +218,11 @@ git memories
 ## Portability
 
 ```bash
-# Sync anywhere
-git remote add origin git@github.com:you/memory-store.git
-git push -u origin main
+# Clone existing memories to a new machine
+git-mem init https://github.com/you/memories.git
 
-# Connect an existing remote memory store to a fresh local store
-git-mem init
-cd ~/memory-store
-git remote add origin https://github.com/you/memory-store.git
-git fetch origin
-git reset origin/main        # fast-forward (safe — local is empty)
-git branch -u origin/main    # set tracking for git-mem sync
+# Already ran init without a URL? Re-run with the URL — it will offer to backup and replace
+git-mem init https://github.com/you/memories.git
 
 # After setup, sync is one command
 git-mem sync                 # pull --rebase then push
@@ -245,6 +242,7 @@ See [SKILL.md](SKILL.md) for agent instructions, capture heuristics, and session
 ### VS Code Copilot
 
 `install.sh` copies the skill to `~/.agents/skills/git-memory/SKILL.md` automatically. The skill triggers on memory-related requests.
+You can also invoke it directly from Copilot Chat with `/git-memory`.
 
 ### Claude Code
 

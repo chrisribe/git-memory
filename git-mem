@@ -33,7 +33,7 @@ usage() {
 git-mem — persistent memory using git empty commits
 
 COMMANDS
-  init                        Initialize memory store
+  init [remote-url]            Initialize memory store (connects & pulls if remote has history)
   add  "[tags] summary"       Store a memory (with dedup check)
   add  --yes "[tags] msg"     Store without dedup prompt (for agents)
   add  --stdin "[tags] msg"   Read body from stdin (multi-line safe)
@@ -316,16 +316,51 @@ cmd_search() {
 # --- Commands ---
 
 cmd_init() {
+    local remote_url="${1:-}"
+
     if [[ -d "$GIT_MEMORY_DIR/.git" ]]; then
-        echo "Memory store already exists at $GIT_MEMORY_DIR"
-        gc log --oneline -5
+        if [[ -n "$remote_url" ]]; then
+            # User wants to clone but store exists — offer to backup and replace
+            local count
+            count=$(gc rev-list --count HEAD 2>/dev/null || echo 0)
+            echo "Memory store already exists at $GIT_MEMORY_DIR ($count memories)"
+            echo ""
+            read -rp "Back up and replace with $remote_url? [y/N] " confirm
+            if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                local backup="${GIT_MEMORY_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+                mv "$GIT_MEMORY_DIR" "$backup"
+                echo -e "${COLOR_DIM}Backed up to $backup${COLOR_RESET}"
+                git clone "$remote_url" "$GIT_MEMORY_DIR"
+                count=$(gc rev-list --count HEAD 2>/dev/null || echo 0)
+                echo ""
+                echo -e "${COLOR_GREEN}✓ Memory store ready at $GIT_MEMORY_DIR${COLOR_RESET}"
+                echo "  $count memories synced from $remote_url"
+                echo "  Run 'git-mem recent' to browse or 'git-mem sync' to push/pull."
+            else
+                echo "Aborted."
+            fi
+        else
+            echo "Memory store already exists at $GIT_MEMORY_DIR"
+            gc log --oneline -5
+        fi
         return 0
     fi
-    mkdir -p "$GIT_MEMORY_DIR"
-    git init "$GIT_MEMORY_DIR"
 
-    # Create README
-    cat > "$GIT_MEMORY_DIR/README.md" <<'README'
+    if [[ -n "$remote_url" ]]; then
+        # Clone existing memories repo
+        git clone "$remote_url" "$GIT_MEMORY_DIR"
+        local count
+        count=$(gc rev-list --count HEAD 2>/dev/null || echo 0)
+        echo ""
+        echo -e "${COLOR_GREEN}✓ Memory store ready at $GIT_MEMORY_DIR${COLOR_RESET}"
+        echo "  $count memories synced from $remote_url"
+        echo "  Run 'git-mem recent' to browse or 'git-mem sync' to push/pull."
+    else
+        # Fresh local store
+        mkdir -p "$GIT_MEMORY_DIR"
+        git init "$GIT_MEMORY_DIR"
+
+        cat > "$GIT_MEMORY_DIR/README.md" <<'README'
 # Memory Store
 
 This is a [git-memory](https://github.com/chrisribe/git-memory) repository.
@@ -344,9 +379,15 @@ git-mem sync                   # push/pull
 See the [git-memory docs](https://github.com/chrisribe/git-memory) for full usage.
 README
 
-    gc add README.md
-    gc commit -m "[meta] Initialize memory store"
-    echo -e "${COLOR_GREEN}Memory store initialized at $GIT_MEMORY_DIR${COLOR_RESET}"
+        gc add README.md
+        gc commit -m "[meta] Initialize memory store"
+        echo ""
+        echo -e "${COLOR_GREEN}✓ Memory store ready at $GIT_MEMORY_DIR${COLOR_RESET}"
+        echo "  Run 'git-mem add \"[tag] summary\"' to store your first memory."
+        echo ""
+        echo -e "${COLOR_DIM}Have an existing memories repo? Re-run with the URL:${COLOR_RESET}"
+        echo -e "${COLOR_DIM}  git-mem init https://github.com/you/memories.git${COLOR_RESET}"
+    fi
 }
 
 cmd_add() {
@@ -705,7 +746,7 @@ cmd_sync() {
     has_remote=$(gc remote 2>/dev/null || true)
 
     if [[ -z "$has_remote" ]]; then
-        die "No remote configured. Run: git -C $GIT_MEMORY_DIR remote add origin <url>"
+        die "No remote configured. Add one with: git -C $GIT_MEMORY_DIR remote add origin <url>"
     fi
 
     echo "Pulling with rebase..."
@@ -732,7 +773,7 @@ cmd="${1:-help}"
 shift 2>/dev/null || true
 
 case "$cmd" in
-    init)       cmd_init "$@" ;;
+    init)       cmd_init "${1:-}" ;;
     add|store|mem)  cmd_add "$@" ;;
     edit)       cmd_edit "$@" ;;
     search|recall|find|grep)  cmd_search "$@" ;;
