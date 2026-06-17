@@ -338,34 +338,29 @@ cmd_search() {
     sources=$(load_sources)
     
     if [[ "$sources" != "[]" ]]; then
-        echo "$sources" | grep -E '"name"|"path"|"enabled"' | \
-        while IFS= read -r line; do
-            if echo "$line" | grep -q '"name"'; then
-                local name
-                name=$(echo "$line" | sed 's/.*"name":\s*"\([^"]*\)".*/\1/')
-                read -r path_line
-                local path
-                path=$(echo "$path_line" | sed 's/.*"path":\s*"\([^"]*\)".*/\1/')
-                read -r enabled_line
-                local enabled
-                enabled=$(echo "$enabled_line" | grep -o 'true\|false')
-                
-                # Skip disabled sources
-                [[ "$enabled" == "false" ]] && continue
-                
-                # Search this source
-                local source_results
-                source_results=$(search_repo "$path" "$name" "$mode" "$fmt" "$terms_pipe" "${grep_args[@]}")
-                
-                if [[ -n "$source_results" ]]; then
-                    if [[ -n "$raw_results" ]]; then
-                        raw_results=$(printf "%s\n%s" "$raw_results" "$source_results")
-                    else
-                        raw_results="$source_results"
-                    fi
+        # Parse with awk and search each enabled source (process substitution to preserve variables)
+        while IFS='|' read -r name path; do
+            # Search this source
+            local source_results
+            source_results=$(search_repo "$path" "$name" "$mode" "$fmt" "$terms_pipe" "${grep_args[@]}")
+            
+            if [[ -n "$source_results" ]]; then
+                if [[ -n "$raw_results" ]]; then
+                    raw_results=$(printf "%s\n%s" "$raw_results" "$source_results")
+                else
+                    raw_results="$source_results"
                 fi
             fi
-        done
+        done < <(echo "$sources" | awk '
+        /"name":/ { name=$0; sub(/.*"name": *"/, "", name); sub(/".*/, "", name) }
+        /"path":/ { path=$0; sub(/.*"path": *"/, "", path); sub(/".*/, "", path) }
+        /"enabled":/ { 
+            enabled=$0; sub(/.*"enabled": */, "", enabled)
+            if (enabled ~ /true/ && name && path) {
+                print name "|" path
+            }
+            name = ""; path = ""
+        }')
     fi
 
     if [[ -z "$raw_results" ]]; then
@@ -911,7 +906,7 @@ cmd_source() {
             # Check if name exists
             local sources
             sources=$(load_sources)
-            if echo "$sources" | grep -q "\"name\":\"$name\"" 2>/dev/null; then
+            if echo "$sources" | grep -qE "\"name\": *\"$name\"" 2>/dev/null; then
                 die "Source already exists: $name"
             fi
             
@@ -1076,15 +1071,15 @@ JSON
             local new_state="true"
             [[ "$subcmd" == "disable" ]] && new_state="false"
             
-            if ! echo "$sources" | grep -q "\"name\":\"$name\""; then
+            if ! echo "$sources" | grep -qE "\"name\": *\"$name\""; then
                 die "Source not found: $name"
             fi
             
             # Find and update the source's enabled field
             sources=$(echo "$sources" | awk -v name="$name" -v state="$new_state" '
-                /"name":/ && $0 ~ "\"" name "\"" { in_source=1 }
+                /"name":/ && $0 ~ "\""name"\"" { in_source=1 }
                 in_source && /"enabled":/ { 
-                    sub(/"enabled":\s*(true|false)/, "\"enabled\": " state)
+                    sub(/"enabled": *(true|false)/, "\"enabled\": " state)
                     in_source=0
                 }
                 { print }
