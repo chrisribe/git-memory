@@ -22,6 +22,7 @@ The irony of MCP memory systems: they add a protocol layer to solve portability,
 ## Docs
 
 - [SKILL.md](SKILL.md) — agent instructions, capture heuristics, session workflow
+- [MULTI-SOURCE.md](MULTI-SOURCE.md) — federated search across multiple memory repos
 - [docs/benchmark.md](docs/benchmark.md) — performance comparison vs simple-memory MCP (800+ memories)
 - [docs/roadmap.md](docs/roadmap.md) — planned features and open design questions
 
@@ -135,6 +136,12 @@ git-mem sync
 | `git-mem tags` | List all tags with frequency counts |
 | `git-mem stats` | Memory store statistics |
 | `git-mem sync` | Safe `pull --rebase` then `push` |
+| `git-mem source add <name> <url\|path>` | Add a read-only source (clone URL or symlink local) |
+| `git-mem source list` | Show all sources with status |
+| `git-mem source disable <name>` | Exclude source from search |
+| `git-mem source enable <name>` | Re-include source in search |
+| `git-mem source remove <name>` | Remove source (unlink or delete) |
+| `git-mem source sync [name]` | Pull latest for sources |
 | `git-mem export` | Dump all memories to stdout |
 
 ### What the wrapper adds over raw git
@@ -157,7 +164,8 @@ Environment variables only. Zero config files.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GIT_MEMORY_DIR` | `~/memory-store` | Path to the memory store |
+| `GIT_MEMORY_DIR` | `~/memory-store` | Path to the primary memory store |
+| `GIT_MEMORY_SOURCES_DIR` | `${GIT_MEMORY_DIR}-sources` | Folder of source repos for federated search |
 | `GIT_MEMORY_DEDUP_THRESHOLD` | `3` | Min word overlap to trigger dedup warning |
 
 ```bash
@@ -235,6 +243,68 @@ Works on: WSL, SAW, devbox, phone (Termux), CI, bare Linux box, anywhere.
 
 ---
 
+## Multi-Source (Federated Search)
+
+Search your primary store plus additional memory repos — without merging them. Sources are **read-only**: `add` always writes to the primary store only.
+
+```bash
+# Add a community knowledge base
+git-mem source add sql-expert https://github.com/someone/sql-patterns-memories
+
+# Add a team's shared gotchas
+git-mem source add team /path/to/team-memories
+
+# Search now hits your memories + all enabled sources
+git-mem search redis
+#   a1b2c3d Redis timeout config
+#   [team] e6f0c08 [team][gotcha] Redis needs 30s minimum timeout
+
+# Manage sources
+git-mem source list
+git-mem source disable team      # exclude from search (renames dir)
+git-mem source enable team       # re-include
+git-mem source remove team       # unlink symlink; original untouched
+git-mem source sync              # pull latest for all sources
+```
+
+### Use cases
+
+**Knowledge domains** — add curated memory repos for specific expertise:
+```bash
+git-mem source add sql-expert https://github.com/someone/sql-patterns
+git-mem source add k8s-gotchas https://github.com/someone/k8s-learnings
+```
+
+**Team sharing** — share project context without exposing personal memories:
+```bash
+git-mem source add team /mnt/shared/team-memories
+git-mem source add daniel ~/external/daniel-devops-notes
+```
+
+**Isolated contexts** — each agent, project, or workflow gets its own store:
+```bash
+# Agent with its own memory, reading yours as a source
+export GIT_MEMORY_DIR=~/hermes-memory
+git-mem init
+git-mem source add personal ~/memory-store
+
+# Work vs personal separation
+export GIT_MEMORY_DIR=~/work-memories
+git-mem source add personal ~/memory-store
+```
+
+**Project archival** — keep a dying project's learnings searchable without contaminating your daily store:
+```bash
+# Archive a project's memories as a source (disable when noisy)
+git-mem source add project-atlas ~/old-projects/atlas-memories
+git-mem source disable project-atlas   # stop searching, keep the repo
+git-mem source enable project-atlas    # bring it back when needed
+```
+
+Sources live in `${GIT_MEMORY_DIR}-sources/` by default. Override with `GIT_MEMORY_SOURCES_DIR`.
+
+---
+
 ## For AI Agents
 
 See [SKILL.md](SKILL.md) for agent instructions, capture heuristics, and session workflow.
@@ -258,7 +328,7 @@ Copy `SKILL.md` to wherever your agent reads instructions. The file is plain mar
 
 ## Status
 
-Working. Wrapper script (`git-mem`), installer, 54 passing tests. See [docs/roadmap.md](docs/roadmap.md) for what's next.
+Working. Wrapper script (`git-mem`), installer, 127 passing tests. See [docs/roadmap.md](docs/roadmap.md) for what's next.
 
 ---
 
