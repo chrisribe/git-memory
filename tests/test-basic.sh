@@ -22,9 +22,9 @@ assert_exit_0 "add one-liner" bash "$GIT_MEM" add "[test] First memory for testi
 assert_exit_0 "add with body" bash "$GIT_MEM" add "[test][detail] Memory with body" "This is the body text with details."
 assert_exit_0 "add with --yes" bash "$GIT_MEM" add --yes "[test] Another memory with yes flag"
 
-# Verify commits exist
+# Verify commits exist (3 adds + 1 [meta] init = 4)
 count=$(git -C "$GIT_MEMORY_DIR" log --oneline | wc -l | tr -d ' ')
-if [[ "$count" -eq 3 ]]; then pass "3 commits stored"; else fail "expected 3 commits, got $count"; fi
+if [[ "$count" -eq 4 ]]; then pass "4 commits stored (3 adds + init)"; else fail "expected 4 commits, got $count"; fi
 
 # Verify body stored correctly
 last_body=$(git -C "$GIT_MEMORY_DIR" log -1 --skip=1 --format="%b")
