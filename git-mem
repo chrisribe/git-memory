@@ -913,21 +913,23 @@ cmd_source() {
 
             mkdir -p "$GIT_MEMORY_SOURCES_DIR"
             local dest="$GIT_MEMORY_SOURCES_DIR/$name"
+            local real_path
+            real_path=$(realpath "$location" 2>/dev/null || echo "$location")
+            local primary_real
+            primary_real=$(realpath "$GIT_MEMORY_DIR" 2>/dev/null || echo "$GIT_MEMORY_DIR")
 
-            if [[ "$location" =~ ^(https?|git|ssh):// || "$location" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+ ]]; then
+            [[ "$real_path" == "$primary_real" ]] && die "Cannot add primary memory store as a source"
+
+            if [[ -d "$real_path/.git" ]]; then
+                # Local path — symlink into sources dir
+                ln -s "$real_path" "$dest" || die "Symlink failed"
+            elif [[ "$location" =~ ^(https?|git|ssh):// || "$location" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+ ]]; then
                 # URL — clone into sources dir
                 [[ -e "$dest" ]] && die "Directory already exists: $dest"
                 echo "Cloning $location..."
                 git clone "$location" "$dest" 2>&1 || die "Clone failed"
             else
-                # Local path — symlink into sources dir
-                local real_path
-                real_path=$(realpath "$location" 2>/dev/null || echo "$location")
-                local primary_real
-                primary_real=$(realpath "$GIT_MEMORY_DIR" 2>/dev/null || echo "$GIT_MEMORY_DIR")
-                [[ "$real_path" == "$primary_real" ]] && die "Cannot add primary memory store as a source"
-                [[ ! -d "$real_path/.git" ]] && die "Not a git repository: $real_path"
-                ln -s "$real_path" "$dest" || die "Symlink failed"
+                die "Not a git repository: $real_path"
             fi
 
             local count
