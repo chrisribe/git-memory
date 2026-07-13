@@ -914,7 +914,7 @@ cmd_source() {
             mkdir -p "$GIT_MEMORY_SOURCES_DIR"
             local dest="$GIT_MEMORY_SOURCES_DIR/$name"
 
-            if [[ "$location" =~ ^(https?|git|ssh):// || "$location" =~ ^[^@[:space:]]+@[^:[:space:]]+:.+ ]]; then
+            if [[ "$location" =~ ^(https?|git|ssh):// || "$location" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+ ]]; then
                 # URL — clone into sources dir
                 [[ -e "$dest" ]] && die "Directory already exists: $dest"
                 echo "Cloning $location..."
