@@ -41,6 +41,10 @@ assert_exit_0         "add local source (hermes)" bash "$GIT_MEM" source add her
 assert_exit_nonzero   "add duplicate name fails"  bash "$GIT_MEM" source add team   /tmp/git-mem-src-team-$$
 assert_exit_nonzero   "add primary as source fails" bash "$GIT_MEM" source add mine "$GIT_MEMORY_DIR"
 assert_exit_nonzero   "reserved name 'mine' rejected" bash "$GIT_MEM" source add mine /tmp/git-mem-src-team-$$
+assert_output_contains "scp-style SSH URL treated as remote clone" "Clone failed" \
+    bash "$GIT_MEM" source add sshremote git@127.0.0.1:/tmp/git-mem-nonexistent-$$
+assert_output_not_contains "scp-style SSH URL not treated as local path" "Not a git repository" \
+    bash "$GIT_MEM" source add sshremote git@127.0.0.1:/tmp/git-mem-nonexistent-$$
 
 # Verify symlinks created
 [[ -L "$GIT_MEMORY_SOURCES_DIR/team" ]]   && pass "team is a symlink"   || fail "team symlink missing"
