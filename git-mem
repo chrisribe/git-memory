@@ -224,7 +224,7 @@ search_repo() {
     shift 5
     local grep_args=("$@")
     
-    [[ ! -d "$repo_path/.git" ]] && return 0
+    [[ ! -d "$repo_path/.git" && ! -f "$repo_path/.git" ]] && return 0
     
     # Get retracted hashes once per repo
     local retracted_set
@@ -862,7 +862,7 @@ cmd_version() {
 # Count memories in a repo
 count_memories() {
     local path="$1"
-    [[ ! -d "$path/.git" ]] && echo "0" && return
+    [[ ! -d "$path/.git" && ! -f "$path/.git" ]] && echo "0" && return
     git -C "$path" rev-list --count HEAD 2>/dev/null || echo "0"
 }
 
@@ -920,7 +920,7 @@ cmd_source() {
 
             [[ "$real_path" == "$primary_real" ]] && die "Cannot add primary memory store as a source"
 
-            if [[ -d "$real_path/.git" ]]; then
+            if [[ -d "$real_path/.git" || -f "$real_path/.git" ]]; then
                 # Local path — symlink into sources dir
                 ln -s "$real_path" "$dest" || die "Symlink failed"
             elif [[ "$location" =~ ^(https?|git|ssh):// || "$location" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+ ]]; then
