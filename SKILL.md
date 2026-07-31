@@ -17,6 +17,7 @@ git-mem init   # first time only — creates ~/memory-store
 ```
 
 Store location: `~/memory-store` (override with `GIT_MEMORY_DIR`).
+Sources location: `~/memory-store-sources` (override with `GIT_MEMORY_SOURCES_DIR`).
 
 ## Commands
 
@@ -39,18 +40,6 @@ Default to AND search — OR gets noisy with 2+ terms because it matches any wor
 git-mem search +cosmosdb +partition    # AND: all words must match
 git-mem search cosmosdb throttle       # OR: any word matches
 ```
-
-### Data quality check
-
-When retrieving memories, watch for **truncation signals** — bodies that were silently clipped:
-
-- Body ends with `:` (introducing a list that got cut off)
-- Body is a single line when the subject implies detailed content (e.g., "full recipe", "complete checklist", "architecture")
-- Body ends mid-sentence or mid-word
-
-If you detect truncation, **tell the user** instead of silently working with partial data:
-
-> "⚠️ This memory appears truncated (body ends with `:`). Want me to search sessions or the codebase for the full context?"
 
 ### Other commands
 
@@ -83,17 +72,7 @@ rm -rf ~/memory-store
 git-mem init https://github.com/you/memories.git
 ```
 
-## Fallback: raw git (only if git-mem is not on PATH)
-
-Only use these if `git-mem` is genuinely unavailable (e.g., not installed). Prefer `git-mem` — it adds dedup checks and tag normalization that raw git lacks.
-
-```bash
-git -C ~/memory-store commit --allow-empty -m "[tags] summary"   # store
-git -C ~/memory-store log --oneline -i --grep "keyword"          # search
-git -C ~/memory-store log --oneline -20                          # recent
-git -C ~/memory-store log -1 --format="%B" <hash>                # show
-git -C ~/memory-store pull --rebase --autostash && git -C ~/memory-store push  # sync
-```
+> **Fallback:** If `git-mem` isn't installed, use `git -C ~/memory-store commit --allow-empty -m "[tags] summary"` — but you lose dedup checks and tag normalization.
 
 ## Subject line format
 
@@ -140,18 +119,7 @@ If unsure, don't save — the user can always say "remember this."
 
 ## When to forget
 
-Memories are never truly deleted — `forget` appends a retraction commit. The original is hidden from search/recent but still exists in git history. `resurface --restore` brings it back.
-
-**Forget** — superseded knowledge (you learned the real answer), one-off incident context after resolution, noisy `[auto]` captures that failed the quality bar, wrong mental models you don't want polluting future searches
-
-**Don't forget** — anything you're unsure about (use `resurface` later to review), root cause learnings even if the system changed, architecture decisions (the rationale still matters)
-
-```bash
-git-mem forget abc1234                          # retract
-git-mem forget abc1234 --reason "wrong — real cause was X"
-git-mem resurface                               # browse retracted pool
-git-mem resurface --restore abc1234             # bring it back
-```
+Use `git-mem forget <hash>` to retract superseded knowledge or noisy `[auto]` captures. Don't forget architecture decisions or root causes — the rationale still matters. Retraction is reversible: `git-mem resurface --restore <hash>`.
 
 ## Session workflow
 
@@ -159,16 +127,6 @@ git-mem resurface --restore abc1234             # bring it back
 2. **During:** Store non-obvious, reusable learnings immediately
 3. **End:** Nothing needed — memories persist
 
-## Branches as thought spaces (optional)
-
-Use branches to separate knowledge by confidence level or scope:
-
-| Branch pattern | Purpose | Merge to main? |
-|----------------|---------|-----------------|
-| `main` | Verified knowledge | — |
-| `brainstorm/*` | Exploratory ideas | Cherry-pick survivors |
-| `incident/*` | Incident context | Merge DRI lessons only |
-| `project/*` | Project-scoped | Merge learnings, archive |
 
 ## Example
 
@@ -184,3 +142,34 @@ Later, user hits CosmosDB 408s:
 git-mem search +cosmosdb
 git-mem show <hash>
 ```
+
+## Multi-source (federated search)
+
+Search your primary store **plus** additional read-only memory repos. Writes always go to the primary store only — sources are never modified.
+
+### Commands
+
+```bash
+git-mem source add <name> <path-or-url>   # symlink local path or clone URL
+git-mem source list                       # show all sources (enabled/disabled)
+git-mem source disable <name>             # exclude from search (keeps repo)
+git-mem source enable <name>              # re-include in search
+git-mem source remove <name>              # unlink symlink or delete clone
+git-mem source sync [name]                # git pull for one or all sources
+```
+
+### Use cases
+
+- **Knowledge domains** — add curated repos: `git-mem source add sql-expert https://...`
+- **Team sharing** — `git-mem source add team /shared/team-memories`
+- **Isolated contexts** — agents/projects get their own `GIT_MEMORY_DIR`, link others as read-only
+- **Project archival** — `git-mem source add old-project ~/archive/atlas-memories` then disable when noisy
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|--------|
+| `GIT_MEMORY_DIR` | `~/memory-store` | Primary store (read-write) |
+| `GIT_MEMORY_SOURCES_DIR` | `${GIT_MEMORY_DIR}-sources` | Folder of source repos (read-only search) |
+
+Sources are just git repos in the sources folder. Folder name = source name. Append `.disabled` to the folder name to exclude from search.

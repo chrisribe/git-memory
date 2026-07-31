@@ -2,12 +2,15 @@
 
 ## Done
 
-- [x] Git Bash (Windows) — 54/54 tests passing
-- [x] WSL2 (Ubuntu) — 54/54 tests passing
+- [x] Git Bash (Windows) — 127/127 tests passing (7 suites)
+- [x] WSL2 (Ubuntu) — 127/127 tests passing
 - [x] Dedup checks subject + body, `--yes` flag for non-interactive use
 - [x] `search --json` and `show --json` for agent output
 - [x] `forget` / `resurface` / `resurface --restore` (append-only retraction)
 - [x] `sync` with `pull --rebase --autostash`, divergent history tested
+- [x] Multi-source federated search (folder-based, no config files)
+- [x] `source add/list/enable/disable/remove/sync`
+- [x] `.gitattributes` LF enforcement for cross-platform checkout
 
 ---
 

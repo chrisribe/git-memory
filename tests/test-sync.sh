@@ -32,7 +32,7 @@ pass "machine A: init + push (branch: $BRANCH)"
 # Machine B: clone from remote
 git clone "$BARE_REPO" "$MACHINE_B" >/dev/null 2>&1
 count_b=$(git -C "$MACHINE_B" log --oneline | wc -l | tr -d ' ')
-if [[ "$count_b" -eq 1 ]]; then pass "machine B: cloned with 1 memory"; else fail "machine B: expected 1 memory, got $count_b"; fi
+if [[ "$count_b" -eq 2 ]]; then pass "machine B: cloned with 2 commits (init + 1 add)"; else fail "machine B: expected 2, got $count_b"; fi
 
 echo ""
 echo "=== Sync: A adds, B pulls ==="
@@ -46,7 +46,7 @@ git -C "$MACHINE_A" push >/dev/null 2>&1
 export GIT_MEMORY_DIR="$MACHINE_B"
 bash "$GIT_MEM" sync >/dev/null 2>&1 || true
 count_b=$(git -C "$MACHINE_B" log --oneline | wc -l | tr -d ' ')
-if [[ "$count_b" -eq 2 ]]; then pass "B synced: has 2 memories"; else fail "B sync: expected 2, got $count_b"; fi
+if [[ "$count_b" -eq 3 ]]; then pass "B synced: has 3 commits (init + 2 adds)"; else fail "B sync: expected 3, got $count_b"; fi
 
 echo ""
 echo "=== Sync: both add, then sync (divergent history) ==="
