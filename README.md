@@ -30,7 +30,7 @@ The irony of MCP memory systems: they add a protocol layer to solve portability,
 
 ## How It Works
 
-The memory store is a git repository. Every memory is stored as an empty commit. The repo has no files — ever.
+The memory store is a git repository. Every memory is stored as an empty commit — the knowledge lives in commit messages, not files.
 
 ```
 memory-store/
