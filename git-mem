@@ -191,8 +191,16 @@ get_retracted_set() {
     gc log --format="%s%n%b" --all 2>/dev/null | awk '
     /^\[retracted\]/ { next }
     /^\[restored\]/ { next }
-    /^Retracted: / { h=substr($0,12); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) retracted[h]++; next }
-    /^Restored: /  { h=substr($0,11); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) restored[h]++; next }
+    /^Retracted: / {
+        h=substr($0,12); sub(/[ \t\r].*$/,"",h); lh=tolower(h)
+        if (length(lh)>=7 && length(lh)<=40 && lh !~ /[^0-9a-f]/) retracted[lh]++
+        next
+    }
+    /^Restored: /  {
+        h=substr($0,11); sub(/[ \t\r].*$/,"",h); lh=tolower(h)
+        if (length(lh)>=7 && length(lh)<=40 && lh !~ /[^0-9a-f]/) restored[lh]++
+        next
+    }
     END {
         for (h in retracted) {
             if (retracted[h] > (restored[h]+0)) print h
@@ -231,8 +239,16 @@ search_repo() {
     retracted_set=$(git -C "$repo_path" log --format="%s%n%b" --all 2>/dev/null | awk '
         /^\[retracted\]/ { next }
         /^\[restored\]/ { next }
-        /^Retracted: / { h=substr($0,12); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) retracted[h]++; next }
-        /^Restored: /  { h=substr($0,11); sub(/[ \t\r].*$/,"",h); if (h ~ /^[0-9a-f]{7,40}$/) restored[h]++; next }
+        /^Retracted: / {
+            h=substr($0,12); sub(/[ \t\r].*$/,"",h); lh=tolower(h)
+            if (length(lh)>=7 && length(lh)<=40 && lh !~ /[^0-9a-f]/) retracted[lh]++
+            next
+        }
+        /^Restored: /  {
+            h=substr($0,11); sub(/[ \t\r].*$/,"",h); lh=tolower(h)
+            if (length(lh)>=7 && length(lh)<=40 && lh !~ /[^0-9a-f]/) restored[lh]++
+            next
+        }
         END {
             for (h in retracted) {
                 if (retracted[h] > (restored[h]+0)) print h
